@@ -1,7 +1,7 @@
 # TP LDAP — Partie 2 : Conception de la structure DIT
 
 > **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 2 / 5 — *Conception de la structure DIT* (`INSTRUCTIONS.md`, même intitulé).  
+> **Chapitre** : 2 / 7 — *Conception de la structure DIT* (`INSTRUCTIONS.md`, même intitulé).  
 > **Prérequis** : *Partie 1 — Installation et déploiement automatisé* : conteneur `ldap` démarré, `slapd` et scripts `init.d` exécutés (notamment **`projet/scripts/init_ldap.sh`** copié en `10-init_ldap.sh`).  
 > **Convention dépôt** : suffixe piloté par **`LDAP_BASE_DN`** (ex. `dc=example,dc=org`) ; comptes exemple **`thomas`** / **`john`** sous **`ou=people`** ; groupes sous **`ou=groups`**.  
 > **Chapitre précédent** : *Partie 1 — Installation et déploiement automatisé*.  
@@ -121,6 +121,6 @@ Un résultat **« No such object »** sur le suffixe avant peuplement est attend
 
 ---
 
-**Fin du chapitre 2 / 5** — La suite logique est la *Partie 3 — Discrétisation des rôles et ACL* : groupes fonctionnels, délégation et règles `olcAccess` sur la base décrite ici.
+**Fin du chapitre 2 / 7** — La suite logique est la *Partie 3 — Discrétisation des rôles et ACL* : groupes fonctionnels, délégation et règles `olcAccess` sur la base décrite ici.
 
 *Référence : `INSTRUCTIONS.md` — section « Conception de la structure DIT ».*

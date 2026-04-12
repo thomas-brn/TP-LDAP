@@ -1,7 +1,7 @@
 # TP LDAP — Partie 3 : Discrétisation des rôles et ACL
 
 > **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 3 / 5 — *Discrétisation des rôles et ACL* (`INSTRUCTIONS.md`, même intitulé).  
+> **Chapitre** : 3 / 7 — *Discrétisation des rôles et ACL* (`INSTRUCTIONS.md`, même intitulé).  
 > **Prérequis** : *Parties 1 et 2* — déploiement opérationnel et **DIT** présent (`ou=people`, `ou=groups`, comptes et groupes créés dans **`projet/scripts/init_ldap.sh`**). Les ACL du présent chapitre s’appliquent à **`olcDatabase={1}mdb,cn=config`**.  
 > **Convention dépôt** : groupe d’administration annuaire **`cn=admin_ldap,ou=groups,$BASE_DN`** ; groupe fonctionnel **`cn=developers`** ; modifications **`cn=config`** via **`ldapmodify -Y EXTERNAL -H ldapi:///`** depuis le conteneur.  
 > **Chapitre précédent** : *Partie 2 — Conception de la structure DIT*.  
@@ -95,13 +95,13 @@ ldapadd -x -H ldap://localhost:389 \
 | Groupe `admin_ldap` | Oui |
 | Groupe fonctionnel | Oui (`developers`) |
 | ACL admin + self + protection `userPassword` | Oui (voir script) |
-| `admin_keycloak` | Non (voir partie 5) |
+| `admin_keycloak` | Oui (voir *Partie 5 — Keycloak*) |
 | Éviter `cn=admin` au quotidien | Partiel |
 
-**Pistes de finalisation** : aligner les ACL sur un modèle **explicite** type installation Debian courante (`userPassword`, `shadowLastChange`, lecture contrôlée du reste) ; ajouter des **tests automatisés** qui échouent puis réussissent selon le compte ; introduire **`admin_keycloak`** dès que la *Partie 5 — Keycloak* est implémentée.
+**Pistes de finalisation** : aligner les ACL sur un modèle **explicite** type installation Debian courante (`userPassword`, `shadowLastChange`, lecture contrôlée du reste) ; ajouter des **tests automatisés** qui échouent puis réussissent selon le compte. Le groupe **`admin_keycloak`** est présent depuis la *Partie 5 — Keycloak* (`init_ldap.sh`).
 
 ---
 
-**Fin du chapitre 3 / 5** — La suite logique est la *Partie 4 — Intégration Linux (PAM / NSS)* : les mêmes utilisateurs et groupes sont exposés à NSS/PAM après enrichissement POSIX.
+**Fin du chapitre 3 / 7** — La suite logique est la *Partie 4 — Intégration Linux (PAM / NSS)* : les mêmes utilisateurs et groupes sont exposés à NSS/PAM après enrichissement POSIX.
 
 *Référence : `INSTRUCTIONS.md` — section « Discrétisation des rôles et ACL ».*

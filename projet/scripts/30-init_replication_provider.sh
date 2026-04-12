@@ -6,10 +6,13 @@ if [ "${LDAP_SERVICE_ROLE:-provider}" = "consumer" ]; then
   exit 0
 fi
 
+<<<<<<< HEAD
 if [ "${LDAP_SERVICE_ROLE:-provider}" = "meta" ]; then
   exit 0
 fi
 
+=======
+>>>>>>> a9ae0b6 (keycloak et replication)
 for _ in $(seq 1 30); do
   if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
     break

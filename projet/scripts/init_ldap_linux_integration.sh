@@ -12,11 +12,14 @@ if [ "${LDAP_SERVICE_ROLE:-provider}" = "consumer" ]; then
   exit 0
 fi
 
+<<<<<<< HEAD
 if [ "${LDAP_SERVICE_ROLE:-provider}" = "meta" ]; then
   echo "[init_ldap_linux] Ignoré sur méta-annuaire (LDAP_SERVICE_ROLE=meta)."
   exit 0
 fi
 
+=======
+>>>>>>> a9ae0b6 (keycloak et replication)
 echo "[init_ldap_linux] Début de la configuration de l'intégration LDAP-Linux..."
 
 # Attendre que slapd soit prêt

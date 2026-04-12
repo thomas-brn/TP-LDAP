@@ -1,7 +1,7 @@
 # TP LDAP — Partie 1 : Installation et déploiement automatisé
 
 > **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 1 / 5 — *Installation et déploiement automatisé* (`INSTRUCTIONS.md`, même intitulé).  
+> **Chapitre** : 1 / 7 — *Installation et déploiement automatisé* (`INSTRUCTIONS.md`, même intitulé).  
 > **Prérequis** : dépôt TP-LDAP, Docker ; aucun autre chapitre du rapport n’est nécessaire avant celui-ci.  
 > **Convention dépôt** : cahier des charges **`INSTRUCTIONS.md`** à la racine ; service conteneur **`ldap`** ; variables `LDAP_*` définies dans **`projet/docker-compose.yml`**.  
 > **Chapitre suivant** : *Partie 2 — Conception de la structure DIT* (`documentation/partie-02-conception-dit.md`).
@@ -102,6 +102,6 @@ ldapsearch -x -H ldap://localhost:389 -b "${LDAP_BASE_DN:-dc=example,dc=org}" -s
 
 ---
 
-**Fin du chapitre 1 / 5** — La suite logique du rapport est la *Partie 2 — Conception de la structure DIT* : suffixe, unités organisationnelles et peuplement LDAP une fois le conteneur opérationnel.
+**Fin du chapitre 1 / 7** — La suite logique du rapport est la *Partie 2 — Conception de la structure DIT* : suffixe, unités organisationnelles et peuplement LDAP une fois le conteneur opérationnel.
 
 *Référence : `INSTRUCTIONS.md` — section « Installation et déploiement automatisé ».*

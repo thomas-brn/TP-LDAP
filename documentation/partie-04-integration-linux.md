@@ -1,7 +1,7 @@
 # TP LDAP — Partie 4 : Intégration Linux (PAM / NSS)
 
 > **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 4 / 5 — *Intégration Linux (PAM/NSS)* (`INSTRUCTIONS.md`, même intitulé).  
+> **Chapitre** : 4 / 7 — *Intégration Linux (PAM/NSS)* (`INSTRUCTIONS.md`, même intitulé).  
 > **Prérequis** : *Parties 1 à 3* — annuaire joignable, **DIT** et **ACL** en place ; le script **`projet/scripts/init_ldap_linux_integration.sh`** est exécuté **après** `init_ldap.sh` dans le conteneur (fichier **`20-init_ldap_linux_integration.sh`** dans `/container/init.d/`).  
 > **Convention dépôt** : tests `getent` depuis l’hôte avec `docker exec ldap …` ; couverture automatisée dans **`projet/test/test_04_integration_linux.sh`**, et suite complète via **`projet/test/test_all_implemented.sh`**.  
 > **Chapitre précédent** : *Partie 3 — Discrétisation des rôles et ACL*.  
@@ -75,7 +75,7 @@ docker exec ldap getent group admin_ldap
 docker exec ldap getent group developers
 ```
 
-Le script **`projet/test/test_04_integration_linux.sh`** automatise ces contrôles depuis l’hôte (via `docker exec`) ; la suite **`test_all_implemented.sh`** inclut aussi les objectifs 1 à 3.
+Le script **`projet/test/test_04_integration_linux.sh`** automatise ces contrôles depuis l’hôte (via `docker exec`) ; la suite **`test_all_implemented.sh`** enchaîne les objectifs **1 à 6** (ordre pédagogique du dépôt).
 
 Pour l’**authentification** (`su`, `ssh`), le comportement dépend du shell, des droits et du fait que `sshd` soit correctement configuré dans l’image. **À prévoir pour finaliser** : un test manuel `docker exec -it ldap su - thomas` ou une connexion SSH depuis l’hôte si le port est publié et sécurisé pour la démo.
 
@@ -94,6 +94,6 @@ Pour l’**authentification** (`su`, `ssh`), le comportement dépend du shell, d
 
 ---
 
-**Fin du chapitre 4 / 5** — La suite logique est la *Partie 5 — Intégration Keycloak (OpenID)* : réutilisation du même annuaire comme fournisseur d’identité pour un IdP séparé.
+**Fin du chapitre 4 / 7** — La suite logique est la *Partie 5 — Intégration Keycloak (OpenID)* : réutilisation du même annuaire comme fournisseur d’identité pour un IdP séparé.
 
 *Référence : `INSTRUCTIONS.md` — section « Intégration Linux (PAM/NSS) ».*
