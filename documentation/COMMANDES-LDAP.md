@@ -1,6 +1,7 @@
 # 🔧 Commandes LDAP pratiques
 
 ## Table des matières
+
 1. [Introduction](#introduction)
 2. [Commandes de base](#commandes-de-base)
 3. [Recherche et consultation](#recherche-et-consultation)
@@ -25,6 +26,7 @@ Ce guide présente les **commandes LDAP essentielles** pour administrer un serve
 ### Configuration de base
 
 Pour ce guide, nous utilisons la configuration suivante :
+
 - **Serveur** : `ldap://localhost:389`
 - **Base DN** : `dc=example,dc=org`
 - **Admin** : `cn=admin,dc=example,dc=org`
@@ -39,11 +41,13 @@ Pour ce guide, nous utilisons la configuration suivante :
 **Rôle :** Rechercher et lire des entrées dans l'annuaire LDAP.
 
 **Syntaxe de base :**
+
 ```bash
 ldapsearch [options] [filtre] [attributs]
 ```
 
 **Options principales :**
+
 - `-H <URI>` : URI du serveur LDAP
 - `-D <binddn>` : DN pour l'authentification
 - `-w <password>` : Mot de passe
@@ -75,6 +79,7 @@ ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=org "(objectClass=groupOf
 **Rôle :** Ajouter de nouvelles entrées dans l'annuaire.
 
 **Syntaxe :**
+
 ```bash
 ldapadd [options] -f <fichier.ldif>
 ```
@@ -101,6 +106,7 @@ uid: newuser" | ldapadd -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org
 **Rôle :** Modifier des entrées existantes dans l'annuaire.
 
 **Syntaxe :**
+
 ```bash
 ldapmodify [options] -f <fichier.ldif>
 ```
@@ -137,6 +143,7 @@ EOF
 **Rôle :** Supprimer des entrées de l'annuaire.
 
 **Syntaxe :**
+
 ```bash
 ldapdelete [options] <dn>
 ```
@@ -156,6 +163,7 @@ ldapdelete -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin "cn
 **Rôle :** Tester l'authentification et vérifier l'identité.
 
 **Syntaxe :**
+
 ```bash
 ldapwhoami [options]
 ```
@@ -178,6 +186,7 @@ ldapwhoami -H ldapi:/// -Y EXTERNAL
 **Rôle :** Modifier les mots de passe des utilisateurs.
 
 **Syntaxe :**
+
 ```bash
 ldappasswd [options] <dn>
 ```
@@ -379,14 +388,14 @@ ldapsearch -x -H ldapi:/// -Y EXTERNAL -b "olcDatabase={2}mdb,cn=config" "(objec
 
 ### Opérateurs principaux
 
-| Opérateur | Description | Exemple |
-|-----------|-------------|---------|
-| `=` | Égalité exacte | `(uid=testuser)` |
-| `~=` | Approximation | `(cn~=john)` |
-| `>=` | Supérieur ou égal | `(uidNumber>=1000)` |
-| `<=` | Inférieur ou égal | `(uidNumber<=2000)` |
-| `=*` | Présence d'attribut | `(mail=*)` |
-| `!` | Négation | `(!(objectClass=groupOfNames))` |
+| Opérateur | Description         | Exemple                         |
+| --------- | ------------------- | ------------------------------- |
+| `=`       | Égalité exacte      | `(uid=testuser)`                |
+| `~=`      | Approximation       | `(cn~=john)`                    |
+| `>=`      | Supérieur ou égal   | `(uidNumber>=1000)`             |
+| `<=`      | Inférieur ou égal   | `(uidNumber<=2000)`             |
+| `=*`      | Présence d'attribut | `(mail=*)`                      |
+| `!`       | Négation            | `(!(objectClass=groupOfNames))` |
 
 ### Opérateurs logiques
 
@@ -436,6 +445,7 @@ attribut3: valeur3
 ### Exemples d'entrées LDIF
 
 **Utilisateur :**
+
 ```ldif
 dn: uid=john,ou=people,dc=example,dc=org
 objectClass: top
@@ -448,6 +458,7 @@ userPassword: {SSHA}hashedpassword
 ```
 
 **Groupe :**
+
 ```ldif
 dn: cn=developers,ou=groups,dc=example,dc=org
 objectClass: top
@@ -458,6 +469,7 @@ member: uid=jane,ou=people,dc=example,dc=org
 ```
 
 **Modification :**
+
 ```ldif
 dn: uid=john,ou=people,dc=example,dc=org
 changetype: modify
