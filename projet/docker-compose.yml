@@ -1,0 +1,167 @@
+name: tp-ldap
+
+services:
+  ldap:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap
+    environment:
+      LDAP_ORGANISATION: Example Org
+      LDAP_DOMAIN: example.org
+      LDAP_BASE_DN: dc=example,dc=org
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+    ports:
+      - "389:389"
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+    restart: "no"
+    stop_grace_period: 15s
+    healthcheck:
+      # Fichier écrit après tous les scripts init.d ; puis DIT + syncprov (réplication).
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,dc=example,dc=org -w \"$$LDAP_ADMIN_PASSWORD\" -b dc=example,dc=org -s base dn >/dev/null 2>&1 && ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s sub -LLL '(objectClass=olcSyncProvConfig)' dn 2>/dev/null | grep -q '^dn:'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ldap-replica:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap-replica
+    environment:
+      LDAP_ORGANISATION: Example Org
+      LDAP_DOMAIN: example.org
+      LDAP_BASE_DN: dc=example,dc=org
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+      LDAP_SERVICE_ROLE: consumer
+      LDAP_REPLICATION_PROVIDER_URI: ldap://ldap:389
+    ports:
+      - "1389:389"
+    volumes:
+      - ldap_replica_data:/var/lib/ldap
+      - ldap_replica_config:/etc/ldap/slapd.d
+    depends_on:
+      ldap:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -b '' -s base namingContexts >/dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    restart: "no"
+    stop_grace_period: 15s
+
+  # Second annuaire (entité distincte) pour le méta-annuaire — même image, autre suffixe.
+  ldap-acme:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap-acme
+    environment:
+      LDAP_ORGANISATION: Acme Corp
+      LDAP_DOMAIN: acme.com
+      LDAP_BASE_DN: dc=acme,dc=com
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+    ports:
+      - "2389:389"
+    volumes:
+      - ldap_acme_data:/var/lib/ldap
+      - ldap_acme_config:/etc/ldap/slapd.d
+    depends_on:
+      ldap:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,dc=acme,dc=com -w \"$$LDAP_ADMIN_PASSWORD\" -b dc=acme,dc=com -s base dn >/dev/null 2>&1 && ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s sub -LLL '(objectClass=olcSyncProvConfig)' dn 2>/dev/null | grep -q '^dn:'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: "no"
+    stop_grace_period: 15s
+
+  # Méta-annuaire (back-meta) : agrège ldap (example.org) et ldap-acme (acme.com).
+  ldap-meta:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap-meta
+    environment:
+      LDAP_SERVICE_ROLE: meta
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+      LDAP_META_SUFFIX: o=federation
+      LDAP_META_EXAMPLE_URI: ldap://ldap:389
+      LDAP_META_EXAMPLE_SUFFIX: dc=example,dc=org
+      LDAP_META_EXAMPLE_VIRTUAL: ou=example-org,o=federation
+      LDAP_META_ACME_URI: ldap://ldap-acme:389
+      LDAP_META_ACME_SUFFIX: dc=acme,dc=com
+      LDAP_META_ACME_VIRTUAL: ou=acme-corp,o=federation
+    ports:
+      - "3389:389"
+    volumes:
+      - ldap_meta_data:/var/lib/ldap
+      - ldap_meta_config:/etc/ldap/slapd.d
+    depends_on:
+      ldap:
+        condition: service_healthy
+      ldap-acme:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,o=federation -w \"$$LDAP_ADMIN_PASSWORD\" -b uid=thomas,ou=people,ou=example-org,o=federation -s base dn >/dev/null 2>&1 && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,o=federation -w \"$$LDAP_ADMIN_PASSWORD\" -b uid=thomas,ou=people,ou=acme-corp,o=federation -s base dn >/dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+    restart: "no"
+    stop_grace_period: 15s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: keycloak
+    command: ["start-dev", "--http-port=8080", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+    ports:
+      # 8090 / 9001 : éviter le conflit avec un service déjà sur 8080 (ex. autre stack).
+      - "8090:8080"
+      - "9001:9000"
+    depends_on:
+      ldap:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  ldap_data: {}
+  ldap_config: {}
+  ldap_replica_data: {}
+  ldap_replica_config: {}
+  ldap_acme_data: {}
+  ldap_acme_config: {}
+  ldap_meta_data: {}
+  ldap_meta_config: {}
