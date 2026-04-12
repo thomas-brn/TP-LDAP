@@ -12,6 +12,7 @@ Ce TP a pour objectif de :
 6. **Fédérer** LDAP avec Keycloak pour la gestion d'identité
 7. **Mettre en place** une architecture de réplication pour la haute disponibilité
 8. **Créer** un méta-annuaire pour agréger plusieurs sources LDAP
+<<<<<<< HEAD
 9. **Tester** l'ensemble de l'infrastructure
 
 ---

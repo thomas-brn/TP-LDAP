@@ -21,6 +21,7 @@ Les instructions à l'origine de ce TP sont disponibles dans le fichier [INSTRUC
 
 Sans `ldap-utils` (ou équivalent), le démarrage Docker fonctionne encore, mais `./projet/test/test_01_*.sh` et les tests manuels LDAP depuis la machine hôte échoueront.
 
+
 ## Démarrage rapide
 
 Les fichiers Docker et les scripts d’automatisation sont dans **`projet/`** (compose, Dockerfile, scripts d’init). Les tests restent dans **`projet/test/`** et se lancent depuis la racine du dépôt avec `./projet/test/…`.
@@ -55,6 +56,7 @@ bash projet/scripts/configure_keycloak_ldap.sh
 
 ```bash
 # Toute la suite (objectifs 1 à 7 ; suppose « docker compose up » déjà lancé dans projet/)
+
 ./projet/test/test_all_implemented.sh
 
 # Un seul objectif, par exemple le DIT
@@ -120,6 +122,8 @@ TP-LDAP/
 │   ├── scripts/
 │   ├── test/
 │   └── docker-compose.yml
+├── documentation/     # Docs utiles pour construire / maintenir le TP
+├── reference/           # PDF et pages HTML de lecture (hors doc de construction)
 ├── README.md
 └── INSTRUCTIONS.md
 ```
