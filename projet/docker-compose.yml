@@ -65,8 +65,7 @@ services:
     restart: "no"
     stop_grace_period: 15s
 
-<<<<<<< HEAD
-  # Second annuaire (entité distincte) pour le méta-annuaire — même image, autre suffixe.
+  # Second annuaire (entité distincte) pour le méta-annuaire - même image, autre suffixe.
   ldap-acme:
     build:
       context: .
@@ -139,8 +138,6 @@ services:
     restart: "no"
     stop_grace_period: 15s
 
-=======
->>>>>>> a9ae0b6 (keycloak et replication)
   keycloak:
     image: quay.io/keycloak/keycloak:26.2
     container_name: keycloak
@@ -163,12 +160,8 @@ volumes:
   ldap_data: {}
   ldap_config: {}
   ldap_replica_data: {}
-<<<<<<< HEAD
   ldap_replica_config: {}
   ldap_acme_data: {}
   ldap_acme_config: {}
   ldap_meta_data: {}
   ldap_meta_config: {}
-=======
-  ldap_replica_config: {}
->>>>>>> a9ae0b6 (keycloak et replication)

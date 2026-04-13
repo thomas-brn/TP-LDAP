@@ -1,0 +1,1255 @@
+% Généré pour inclusion dans rapport-tp-ldap-guide-operateur.tex - ne pas éditer à la main sans resynchroniser le dépôt.
+\section{\texttt{docker-compose.yml}}\label{ann:compose}
+{\footnotesize
+\begin{verbatim}
+name: tp-ldap
+
+services:
+  ldap:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap
+    environment:
+      LDAP_ORGANISATION: Example Org
+      LDAP_DOMAIN: example.org
+      LDAP_BASE_DN: dc=example,dc=org
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+    ports:
+      - "389:389"
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+    restart: "no"
+    stop_grace_period: 15s
+    healthcheck:
+      # Fichier écrit après tous les scripts init.d ; puis DIT + syncprov (réplication).
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,dc=example,dc=org -w \"$$LDAP_ADMIN_PASSWORD\" -b dc=example,dc=org -s base dn >/dev/null 2>&1 && ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s sub -LLL '(objectClass=olcSyncProvConfig)' dn 2>/dev/null | grep -q '^dn:'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ldap-replica:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap-replica
+    environment:
+      LDAP_ORGANISATION: Example Org
+      LDAP_DOMAIN: example.org
+      LDAP_BASE_DN: dc=example,dc=org
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+      LDAP_SERVICE_ROLE: consumer
+      LDAP_REPLICATION_PROVIDER_URI: ldap://ldap:389
+    ports:
+      - "1389:389"
+    volumes:
+      - ldap_replica_data:/var/lib/ldap
+      - ldap_replica_config:/etc/ldap/slapd.d
+    depends_on:
+      ldap:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -b '' -s base namingContexts >/dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    restart: "no"
+    stop_grace_period: 15s
+
+  # Second annuaire (entité distincte) pour le méta-annuaire - même image, autre suffixe.
+  ldap-acme:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap-acme
+    environment:
+      LDAP_ORGANISATION: Acme Corp
+      LDAP_DOMAIN: acme.com
+      LDAP_BASE_DN: dc=acme,dc=com
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+    ports:
+      - "2389:389"
+    volumes:
+      - ldap_acme_data:/var/lib/ldap
+      - ldap_acme_config:/etc/ldap/slapd.d
+    depends_on:
+      ldap:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,dc=acme,dc=com -w \"$$LDAP_ADMIN_PASSWORD\" -b dc=acme,dc=com -s base dn >/dev/null 2>&1 && ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s sub -LLL '(objectClass=olcSyncProvConfig)' dn 2>/dev/null | grep -q '^dn:'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: "no"
+    stop_grace_period: 15s
+
+  # Méta-annuaire (back-meta) : agrège ldap (example.org) et ldap-acme (acme.com).
+  ldap-meta:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ldap-meta
+    environment:
+      LDAP_SERVICE_ROLE: meta
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+      LDAP_META_SUFFIX: o=federation
+      LDAP_META_EXAMPLE_URI: ldap://ldap:389
+      LDAP_META_EXAMPLE_SUFFIX: dc=example,dc=org
+      LDAP_META_EXAMPLE_VIRTUAL: ou=example-org,o=federation
+      LDAP_META_ACME_URI: ldap://ldap-acme:389
+      LDAP_META_ACME_SUFFIX: dc=acme,dc=com
+      LDAP_META_ACME_VIRTUAL: ou=acme-corp,o=federation
+    ports:
+      - "3389:389"
+    volumes:
+      - ldap_meta_data:/var/lib/ldap
+      - ldap_meta_config:/etc/ldap/slapd.d
+    depends_on:
+      ldap:
+        condition: service_healthy
+      ldap-acme:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /container/.ldap-init-complete && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,o=federation -w \"$$LDAP_ADMIN_PASSWORD\" -b uid=thomas,ou=people,ou=example-org,o=federation -s base dn >/dev/null 2>&1 && ldapsearch -x -H ldap://127.0.0.1:389 -D cn=admin,o=federation -w \"$$LDAP_ADMIN_PASSWORD\" -b uid=thomas,ou=people,ou=acme-corp,o=federation -s base dn >/dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+    restart: "no"
+    stop_grace_period: 15s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: keycloak
+    command: ["start-dev", "--http-port=8080", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_PORT: "9000"
+    ports:
+      # 8090 / 9001 : éviter le conflit avec un service déjà sur 8080 (ex. autre stack).
+      - "8090:8080"
+      - "9001:9000"
+    depends_on:
+      ldap:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  ldap_data: {}
+  ldap_config: {}
+  ldap_replica_data: {}
+  ldap_replica_config: {}
+  ldap_acme_data: {}
+  ldap_acme_config: {}
+  ldap_meta_data: {}
+  ldap_meta_config: {}
+\end{verbatim}
+}
+
+\section{\texttt{docker/Dockerfile}}\label{ann:dockerfile}
+{\footnotesize
+\begin{verbatim}
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LDAP_ORGANISATION="Example Org" \
+    LDAP_DOMAIN="example.org" \
+    LDAP_BASE_DN="dc=example,dc=org" \
+    LDAP_ADMIN_PASSWORD="admin" \
+    LDAP_TLS="false"
+
+# slapd + clients ; NSS/PAM + nslcd/nscd pour l’objectif 4 (getent).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       slapd ldap-utils tini bash coreutils procps ca-certificates sysvinit-utils \
+       libpam-ldap libnss-ldap nslcd nscd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /container/init.d /var/lib/ldap /etc/ldap/slapd.d \
+    && chown -R openldap:openldap /var/lib/ldap /etc/ldap/slapd.d
+
+COPY --chown=openldap:openldap scripts/init_ldap.sh /container/init.d/init_ldap.sh
+COPY --chown=openldap:openldap scripts/init_ldap_linux_integration.sh /container/init.d/init_ldap_linux_integration.sh
+COPY --chown=openldap:openldap scripts/init_replication_provider.sh /container/init.d/init_replication_provider.sh
+COPY --chown=openldap:openldap scripts/init_replication_consumer.sh /container/init.d/init_replication_consumer.sh
+COPY --chown=root:root scripts/init_meta_annuaire.sh /container/init_meta_annuaire.sh
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh /container/init_meta_annuaire.sh /container/init.d/init_ldap.sh /container/init.d/init_ldap_linux_integration.sh \
+    /container/init.d/init_replication_provider.sh /container/init.d/init_replication_consumer.sh
+
+EXPOSE 389
+
+VOLUME ["/var/lib/ldap", "/etc/ldap/slapd.d"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
+\end{verbatim}
+}
+
+\section{\texttt{docker/entrypoint.sh}}\label{ann:entrypoint}
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Script d'entrée pour le conteneur LDAP
+# Ce script démarre slapd et exécute les scripts d'initialisation
+
+echo "[entrypoint] Démarrage du conteneur LDAP..."
+
+# Les volumes Docker montés sur /var/lib/ldap et /etc/ldap/slapd.d sont vides
+# et souvent propriété de root : slapd (-u openldap) ne peut pas y accéder.
+chown -R openldap:openldap /var/lib/ldap /etc/ldap/slapd.d
+
+# Initialisation de la configuration slapd si nécessaire
+# Cette étape crée la structure de base cn=config
+if [ ! -d "/etc/ldap/slapd.d" ] || [ -z "$(ls -A /etc/ldap/slapd.d || true)" ]; then
+  echo "[entrypoint] Initialisation de la configuration slapd..."
+  slaptest -F /etc/ldap/slapd.d -f /dev/null >/dev/null 2>&1 || true
+  chown -R openldap:openldap /etc/ldap/slapd.d
+fi
+
+# Vérifier si slapd est déjà en cours d'exécution
+if pgrep slapd >/dev/null 2>&1; then
+    echo "[entrypoint] slapd déjà en cours d'exécution"
+else
+    # Démarrage du serveur slapd en arrière-plan.
+    # slapd se daemonise (fork) : le PID du shell ($!) meurt tout de suite, on vérifie la vie du
+    # service avec pgrep slapd, pas avec kill -0 $!.
+    echo "[entrypoint] Lancement de slapd..."
+    slapd -h "ldap:/// ldapi:///" -u openldap -g openldap -F /etc/ldap/slapd.d &
+fi
+
+# Attendre que slapd écoute (processus slapd + socket ldapi + LDAP TCP).
+echo "[entrypoint] Attente du socket ldapi et du port LDAP 389..."
+ready=0
+for i in {1..60}; do
+  if ! pgrep slapd >/dev/null 2>&1; then
+    echo "[entrypoint] ERREUR: aucun processus slapd. Vérifiez les droits sur /etc/ldap/slapd.d et /var/lib/ldap (propriétaire openldap)."
+    exit 1
+  fi
+  if { [ -S /var/run/slapd/ldapi ] || [ -S /run/slapd/ldapi ]; } && bash -c ":>/dev/tcp/127.0.0.1/389" 2>/dev/null; then
+    echo "[entrypoint] slapd prêt (ldapi + port 389)"
+    ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$ready" != 1 ]; then
+  echo "[entrypoint] ERREUR: slapd ne semble pas joignable après 60 s."
+  exit 1
+fi
+
+# Exécution des scripts d'initialisation (ordre fixe : pas de préfixe numérique sur les noms)
+if [ -d "/container/init.d" ]; then
+  echo "[entrypoint] Exécution des scripts d'initialisation..."
+  for name in init_ldap.sh init_ldap_linux_integration.sh init_replication_provider.sh init_replication_consumer.sh; do
+    script="/container/init.d/$name"
+    [ -e "$script" ] || continue
+    echo "[entrypoint] Exécution: $script"
+    if bash "$script"; then
+      echo "[entrypoint] Terminé OK: $script"
+    else
+      rc=$?
+      echo "[entrypoint] AVERTISSEMENT: $script a retourné le code $rc (poursuite du démarrage)"
+    fi
+  done
+  echo "[entrypoint] Scripts d'initialisation terminés"
+  touch /container/.ldap-init-complete
+fi
+
+# Arrêt propre : docker stop envoie SIGTERM à PID 1
+# Éviter « sleep infinity » en boucle : l'arrêt peut rester bloqué très longtemps en « Stopping »
+_shutdown() {
+  echo "[entrypoint] Arrêt demandé (SIGTERM/SIGINT)..."
+  pkill -u openldap -TERM slapd 2>/dev/null || pkill -TERM slapd 2>/dev/null || true
+  local i
+  for i in $(seq 1 40); do
+    pgrep slapd >/dev/null 2>&1 || break
+    sleep 0.25
+  done
+  pkill -u openldap -KILL slapd 2>/dev/null || pkill -KILL slapd 2>/dev/null || true
+  exit 0
+}
+trap _shutdown TERM INT
+
+echo "[entrypoint] Conteneur prêt (docker stop pour arrêter)..."
+tail -f /dev/null &
+wait $!
+\end{verbatim}
+}
+
+\section{Script \texttt{scripts/init\_ldap.sh}}\label{ann:init-ldap}
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+# Script d'initialisation LDAP
+# Ce script configure la base mdb, crée le DIT et configure les ACL
+
+# Désactiver l'arrêt sur erreur pour permettre la continuation
+set -uo pipefail
+
+# Variables d'environnement attendues:
+# - LDAP_BASE_DN
+# - LDAP_ORGANISATION
+# - LDAP_DOMAIN
+# - LDAP_ADMIN_PASSWORD (utilisée pour le rootDN de la base)
+# - LDAP_SERVICE_ROLE : provider (défaut) = DIT complet ; consumer = base mdb + ACL, données via syncrepl
+
+BASE_DN=${LDAP_BASE_DN:-"dc=polytech,dc=fr"}
+ROLE=${LDAP_SERVICE_ROLE:-provider}
+ORG=${LDAP_ORGANISATION:-"Polytech"}
+DOMAIN=${LDAP_DOMAIN:-"polytech.fr"}
+ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-"admin123"}
+
+export LDAPTLS_REQCERT=never # pour ne pas avoir à fournir de certificat lors de la connexion
+
+# Attendre que slapd réponde (ldapi)
+for i in {1..30}; do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if [ "$ROLE" = "meta" ]; then
+  echo "[init_ldap] Rôle meta : méta-annuaire (pas de DIT mdb local)."
+  bash /container/init_meta_annuaire.sh
+  exit $?
+fi
+
+# Supprimer la base mdb par défaut et créer une nouvelle
+echo "[init_ldap] Suppression de la base mdb par défaut..."
+ldapmodify -H ldapi:/// -Y EXTERNAL <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: delete
+EOF
+echo "[init_ldap] Base mdb par défaut supprimée"
+
+# Les fichiers sous /var/lib/ldap gardent sinon l’ancien suffixe (ex. dc=nodomain) alors que
+# cn=config pointe déjà vers LDAP_BASE_DN → syncrepl / slapcat incohérents.
+echo "[init_ldap] Purge des fichiers mdb et redémarrage de slapd..."
+pkill -u openldap -TERM slapd 2>/dev/null || pkill -TERM slapd 2>/dev/null || true
+for _ in $(seq 1 40); do
+  pgrep slapd >/dev/null 2>&1 || break
+  sleep 0.25
+done
+pkill -u openldap -KILL slapd 2>/dev/null || pkill -KILL slapd 2>/dev/null || true
+find /var/lib/ldap -mindepth 1 -delete 2>/dev/null || true
+chown openldap:openldap /var/lib/ldap
+slapd -h "ldap:/// ldapi:///" -u openldap -g openldap -F /etc/ldap/slapd.d &
+for _ in $(seq 1 60); do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+# Créer une nouvelle base mdb avec la configuration correcte
+echo "[init_ldap] Création de la base mdb pour suffix=$BASE_DN..."
+HASH=$(slappasswd -s "$ADMIN_PASS")
+cat > /tmp/new-db.ldif <<EOF
+dn: olcDatabase=mdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMdbConfig
+olcDatabase: mdb
+olcSuffix: $BASE_DN
+olcRootDN: cn=admin,$BASE_DN
+olcRootPW: $HASH
+olcDbDirectory: /var/lib/ldap
+olcDbIndex: objectClass eq
+olcDbIndex: cn,sn,uid eq
+olcDbMaxSize: 1073741824
+EOF
+ldapadd -H ldapi:/// -Y EXTERNAL -f /tmp/new-db.ldif
+echo "[init_ldap] Base mdb créée avec suffix=$BASE_DN"
+
+if [ "$ROLE" = "consumer" ]; then
+  echo "[init_ldap] Rôle consumer : pas de création locale du DIT (réplication depuis le fournisseur)."
+else
+# DIT: base + ou=people + ou=groups + groupe admin_ldap + groupe developers + utilisateurs thomas et john
+cat > /tmp/dit.ldif <<EOF
+version: 1
+
+dn: $BASE_DN
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: $ORG
+dc: ${DOMAIN%%.*}
+
+dn: ou=people,$BASE_DN
+objectClass: top
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,$BASE_DN
+objectClass: top
+objectClass: organizationalUnit
+ou: groups
+
+dn: cn=admin_ldap,ou=groups,$BASE_DN
+objectClass: top
+objectClass: groupOfNames
+cn: admin_ldap
+member: cn=dummy,$BASE_DN
+
+dn: cn=developers,ou=groups,$BASE_DN
+objectClass: top
+objectClass: groupOfNames
+cn: developers
+member: cn=dummy,$BASE_DN
+
+dn: cn=admin_keycloak,ou=groups,$BASE_DN
+objectClass: top
+objectClass: groupOfNames
+cn: admin_keycloak
+member: cn=dummy,$BASE_DN
+
+dn: uid=thomas,ou=people,$BASE_DN
+objectClass: top
+objectClass: inetOrgPerson
+cn: Thomas
+sn: Thomas
+uid: thomas
+mail: thomas@$DOMAIN
+userPassword: $(slappasswd -s thomas123)
+
+dn: uid=john,ou=people,$BASE_DN
+objectClass: top
+objectClass: inetOrgPerson
+cn: John
+sn: John
+uid: john
+mail: john@$DOMAIN
+userPassword: $(slappasswd -s john123)
+EOF
+
+# Ajouter la structure si absente (bind simple sur rootDN)
+echo "[init_ldap] Vérification de l'existence du DIT..."
+if ! ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "$BASE_DN" -s base dn >/dev/null 2>&1; then
+  echo "[init_ldap] Création DIT de base..."
+  ldapadd -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/dit.ldif || echo "[init_ldap] Erreur lors de la création du DIT"
+  echo "[init_ldap] DIT créé"
+else
+  echo "[init_ldap] DIT déjà présent"
+fi
+echo "[init_ldap] Étape DIT terminée"
+
+# Ajouter thomas au groupe admin_ldap et john au groupe developers
+echo "[init_ldap] Ajout de thomas au groupe admin_ldap..."
+cat > /tmp/add-thomas-to-admin.ldif <<EOF
+dn: cn=admin_ldap,ou=groups,$BASE_DN
+changetype: modify
+delete: member
+member: cn=dummy,$BASE_DN
+-
+add: member
+member: uid=thomas,ou=people,$BASE_DN
+EOF
+ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/add-thomas-to-admin.ldif || echo "[init_ldap] Erreur lors de l'ajout de thomas au groupe admin_ldap"
+echo "[init_ldap] Thomas ajouté au groupe admin_ldap"
+
+echo "[init_ldap] Ajout de john au groupe developers..."
+cat > /tmp/add-john-to-developers.ldif <<EOF
+dn: cn=developers,ou=groups,$BASE_DN
+changetype: modify
+delete: member
+member: cn=dummy,$BASE_DN
+-
+add: member
+member: uid=john,ou=people,$BASE_DN
+EOF
+ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/add-john-to-developers.ldif || echo "[init_ldap] Erreur lors de l'ajout de john au groupe developers"
+echo "[init_ldap] John ajouté au groupe developers"
+
+echo "[init_ldap] Ajout de thomas au groupe admin_keycloak..."
+cat > /tmp/add-thomas-to-admin-keycloak.ldif <<EOF
+dn: cn=admin_keycloak,ou=groups,$BASE_DN
+changetype: modify
+delete: member
+member: cn=dummy,$BASE_DN
+-
+add: member
+member: uid=thomas,ou=people,$BASE_DN
+EOF
+ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/add-thomas-to-admin-keycloak.ldif || echo "[init_ldap] Erreur lors de l'ajout de thomas au groupe admin_keycloak"
+echo "[init_ldap] Thomas ajouté au groupe admin_keycloak"
+
+# Tentative de suppression d'un éventuel entry cn=admin (peu probable qu'il existe)
+if ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "$BASE_DN" "(cn=admin)" dn | grep -q "^dn: cn=admin,$BASE_DN$"; then
+  echo "[init_ldap] Suppression cn=admin pour discrétisation..."
+  cat > /tmp/delete-admin.ldif <<EOF
+version: 1
+
+dn: cn=admin,$BASE_DN
+changetype: delete
+EOF
+  ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/delete-admin.ldif || echo "[init_ldap] Erreur lors de la suppression de cn=admin"
+fi
+
+fi # fin rôle provider (DIT)
+
+# Configuration des ACL de base pour permettre l'accès
+echo "[init_ldap] Configuration des ACL de base..."
+cat > /tmp/acl-basic.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: to * by dn.exact=cn=admin,$BASE_DN manage by * read
+EOF
+ldapmodify -H ldapi:/// -Y EXTERNAL -f /tmp/acl-basic.ldif || echo "[init_ldap] Erreur lors de la configuration des ACL de base"
+
+# Configuration des ACL avancées pour le groupe admin_ldap
+echo "[init_ldap] Configuration des ACL avancées pour admin_ldap..."
+cat > /tmp/acl-advanced.ldif <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: to attrs=userPassword by group.exact=cn=admin_ldap,ou=groups,$BASE_DN write by self write by anonymous auth by * none
+olcAccess: to dn.base="" by * read
+olcAccess: to * by group.exact=cn=admin_ldap,ou=groups,$BASE_DN manage by self write by users read by * none
+EOF
+ldapmodify -H ldapi:/// -Y EXTERNAL -f /tmp/acl-advanced.ldif || echo "[init_ldap] Erreur lors de la configuration des ACL avancées"
+
+echo "[init_ldap] Structure DIT et ACL configurées."
+\end{verbatim}
+}
+
+\section{Script \texttt{scripts/init\_ldap\_linux\_integration.sh}}\label{ann:init-linux}
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+# Script d'initialisation de l'intégration LDAP-Linux
+# Ce script configure PAM, SSSD et NSS pour l'authentification LDAP
+
+# Variables d'environnement
+BASE_DN=${LDAP_BASE_DN:-"dc=example,dc=org"}
+DOMAIN=${LDAP_DOMAIN:-"example.org"}
+ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-"admin"}
+
+if [ "${LDAP_SERVICE_ROLE:-provider}" = "consumer" ]; then
+  echo "[init_ldap_linux] Ignoré sur réplica (LDAP_SERVICE_ROLE=consumer)."
+  exit 0
+fi
+
+if [ "${LDAP_SERVICE_ROLE:-provider}" = "meta" ]; then
+  echo "[init_ldap_linux] Ignoré sur méta-annuaire (LDAP_SERVICE_ROLE=meta)."
+  exit 0
+fi
+
+echo "[init_ldap_linux] Début de la configuration de l'intégration LDAP-Linux..."
+
+# Attendre que slapd soit prêt
+for i in {1..30}; do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+# Configuration de NSS (Name Service Switch)
+echo "[init_ldap_linux] Configuration de NSS..."
+cat > /etc/nsswitch.conf <<EOF
+# /etc/nsswitch.conf
+# Configuration pour l'intégration LDAP
+
+passwd:         files ldap
+group:          files ldap
+shadow:         files ldap
+gshadow:        files
+
+hosts:          files dns
+networks:       files
+
+protocols:      db files
+services:       db files
+ethers:         db files
+rpc:            db files
+
+netgroup:       ldap
+EOF
+
+# Configuration de libnss-ldap
+echo "[init_ldap_linux] Configuration de libnss-ldap..."
+cat > /etc/ldap/ldap.conf <<EOF
+# Configuration LDAP pour NSS
+BASE $BASE_DN
+URI ldap://localhost:389
+TLS_REQCERT never
+EOF
+
+# Configuration de PAM pour LDAP
+echo "[init_ldap_linux] Configuration de PAM..."
+cat > /etc/pam.d/common-auth <<EOF
+# Configuration PAM pour l'authentification LDAP
+auth    sufficient      pam_ldap.so
+auth    sufficient      pam_unix.so nullok_secure use_first_pass
+auth    required        pam_deny.so
+EOF
+
+cat > /etc/pam.d/common-account <<EOF
+# Configuration PAM pour la gestion des comptes
+account sufficient      pam_ldap.so
+account sufficient      pam_unix.so
+account required        pam_deny.so
+EOF
+
+cat > /etc/pam.d/common-password <<EOF
+# Configuration PAM pour les mots de passe
+password        sufficient      pam_ldap.so
+password        sufficient      pam_unix.so nullok obscure min=4 max=8 md5
+password        required        pam_deny.so
+EOF
+
+cat > /etc/pam.d/common-session <<EOF
+# Configuration PAM pour les sessions
+session required        pam_mkhomedir.so skel=/etc/skel umask=0022
+session sufficient      pam_ldap.so
+session sufficient      pam_unix.so
+session required        pam_deny.so
+EOF
+
+# Configuration de nslcd (plus simple et fiable que SSSD dans un conteneur)
+echo "[init_ldap_linux] Configuration de nslcd..."
+cat > /etc/nslcd.conf <<EOF
+# Configuration nslcd pour LDAP
+uri ldap://localhost:389
+base $BASE_DN
+ldap_version 3
+binddn cn=admin,$BASE_DN
+bindpw $ADMIN_PASS
+filter passwd (objectClass=posixAccount)
+filter group (objectClass=posixGroup)
+filter shadow (objectClass=shadowAccount)
+map passwd homeDirectory homeDirectory
+map passwd uidNumber uidNumber
+map passwd gidNumber gidNumber
+map passwd loginShell loginShell
+map passwd gecos gecos
+map group gidNumber gidNumber
+map group memberUid memberUid
+EOF
+
+# Permissions pour nslcd
+chmod 600 /etc/nslcd.conf
+chown root:root /etc/nslcd.conf
+
+# Configuration de libpam-ldap
+echo "[init_ldap_linux] Configuration de libpam-ldap..."
+cat > /etc/ldap.conf <<EOF
+# Configuration pour libpam-ldap
+base $BASE_DN
+uri ldap://localhost:389
+ldap_version 3
+rootbinddn cn=admin,$BASE_DN
+binddn cn=admin,$BASE_DN
+bindpw $ADMIN_PASS
+pam_password crypt
+nss_base_passwd ou=people,$BASE_DN
+nss_base_shadow ou=people,$BASE_DN
+nss_base_group ou=groups,$BASE_DN
+nss_map_objectclass posixAccount user
+nss_map_objectclass shadowAccount user
+nss_map_objectclass posixGroup group
+nss_map_attribute uid sAMAccountName
+nss_map_attribute homeDirectory unixHomeDirectory
+nss_map_attribute shadowLastChange pwdLastSet
+nss_map_objectclass posixAccount user
+nss_map_objectclass shadowAccount user
+nss_map_objectclass posixGroup group
+nss_map_attribute uid sAMAccountName
+nss_map_attribute homeDirectory unixHomeDirectory
+nss_map_attribute shadowLastChange pwdLastSet
+pam_login_attribute uid
+pam_member_attribute member
+pam_filter objectclass=inetOrgPerson
+pam_password exop
+EOF
+
+# Ajout des attributs POSIX aux utilisateurs LDAP
+echo "[init_ldap_linux] Ajout des attributs POSIX aux utilisateurs..."
+cat > /tmp/add_posix_attrs.ldif <<EOF
+dn: uid=thomas,ou=people,$BASE_DN
+changetype: modify
+add: objectClass
+objectClass: posixAccount
+objectClass: shadowAccount
+-
+add: uidNumber
+uidNumber: 1001
+-
+add: gidNumber
+gidNumber: 1001
+-
+add: homeDirectory
+homeDirectory: /home/thomas
+-
+add: loginShell
+loginShell: /bin/bash
+-
+add: gecos
+gecos: Thomas Thomas
+
+dn: uid=john,ou=people,$BASE_DN
+changetype: modify
+add: objectClass
+objectClass: posixAccount
+objectClass: shadowAccount
+-
+add: uidNumber
+uidNumber: 1002
+-
+add: gidNumber
+gidNumber: 1002
+-
+add: homeDirectory
+homeDirectory: /home/john
+-
+add: loginShell
+loginShell: /bin/bash
+-
+add: gecos
+gecos: John John
+EOF
+
+ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/add_posix_attrs.ldif || echo "[init_ldap_linux] Erreur lors de l'ajout des attributs POSIX"
+
+# Conversion des groupes de groupOfNames à posixGroup
+echo "[init_ldap_linux] Conversion des groupes en posixGroup..."
+# Vérifier d'abord si les groupes existent et ont des membres
+# Supprimer d'abord les membres existants (s'ils existent)
+cat > /tmp/convert_groups_to_posix.ldif <<EOF
+dn: cn=admin_ldap,ou=groups,$BASE_DN
+changetype: modify
+delete: objectClass
+objectClass: groupOfNames
+-
+delete: member
+EOF
+
+# Ajouter les membres s'ils existent
+if ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "cn=admin_ldap,ou=groups,$BASE_DN" "(member=*)" member 2>/dev/null | grep -q "member:"; then
+    # Supprimer tous les membres existants
+    ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "cn=admin_ldap,ou=groups,$BASE_DN" "(member=*)" member 2>/dev/null | grep "^member:" | sed 's/^member: /delete: member\nmember: /' >> /tmp/convert_groups_to_posix.ldif
+fi
+
+cat >> /tmp/convert_groups_to_posix.ldif <<EOF
+-
+add: objectClass
+objectClass: posixGroup
+-
+add: gidNumber
+gidNumber: 1001
+-
+add: memberUid
+memberUid: thomas
+
+dn: cn=developers,ou=groups,$BASE_DN
+changetype: modify
+delete: objectClass
+objectClass: groupOfNames
+-
+delete: member
+EOF
+
+if ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "cn=developers,ou=groups,$BASE_DN" "(member=*)" member 2>/dev/null | grep -q "member:"; then
+    ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "cn=developers,ou=groups,$BASE_DN" "(member=*)" member 2>/dev/null | grep "^member:" | sed 's/^member: /delete: member\nmember: /' >> /tmp/convert_groups_to_posix.ldif
+fi
+
+cat >> /tmp/convert_groups_to_posix.ldif <<EOF
+-
+add: objectClass
+objectClass: posixGroup
+-
+add: gidNumber
+gidNumber: 1002
+-
+add: memberUid
+memberUid: john
+EOF
+
+ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/convert_groups_to_posix.ldif 2>&1 || {
+    echo "[init_ldap_linux] Tentative de conversion des groupes..."
+    # Si la conversion échoue, essayer une approche plus simple : supprimer et recréer
+    echo "[init_ldap_linux] Suppression et recréation des groupes en posixGroup..."
+    # Supprimer les groupes existants
+    ldapdelete -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" "cn=admin_ldap,ou=groups,$BASE_DN" 2>/dev/null || true
+    ldapdelete -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" "cn=developers,ou=groups,$BASE_DN" 2>/dev/null || true
+    sleep 1
+    # Recréer les groupes en posixGroup
+    cat > /tmp/recreate_posix_groups.ldif <<EOF
+dn: cn=admin_ldap,ou=groups,$BASE_DN
+objectClass: top
+objectClass: posixGroup
+cn: admin_ldap
+gidNumber: 1001
+memberUid: thomas
+
+dn: cn=developers,ou=groups,$BASE_DN
+objectClass: top
+objectClass: posixGroup
+cn: developers
+gidNumber: 1002
+memberUid: john
+EOF
+    ldapadd -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/recreate_posix_groups.ldif 2>&1 && echo "[init_ldap_linux] Groupes recréés en posixGroup" || echo "[init_ldap_linux] Erreur lors de la recréation des groupes"
+}
+
+# Démarrage des services
+echo "[init_ldap_linux] Démarrage des services..."
+# Démarrer nslcd
+service nslcd restart || service nslcd start
+# Attendre que nslcd soit prêt
+sleep 2
+# Redémarrer nscd pour recharger la configuration et vider le cache
+service nscd restart || service nscd start
+# Vider le cache nscd pour forcer la relecture depuis LDAP
+nscd -i passwd 2>/dev/null || true
+nscd -i group 2>/dev/null || true
+sleep 1
+
+# Test de l'intégration
+echo "[init_ldap_linux] Test de l'intégration..."
+echo "Test de résolution des utilisateurs:"
+getent passwd thomas
+getent passwd john
+
+echo "Test de résolution des groupes:"
+getent group admin_ldap
+getent group developers
+
+echo "[init_ldap_linux] Configuration de l'intégration LDAP-Linux terminée."
+\end{verbatim}
+}
+
+\section{Script \texttt{scripts/init\_replication\_provider.sh}}\label{ann:repl-provider}
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+# Fournisseur de réplication : overlay syncprov + olcServerID (OpenLDAP 2.6).
+set -uo pipefail
+
+if [ "${LDAP_SERVICE_ROLE:-provider}" = "consumer" ]; then
+  exit 0
+fi
+
+if [ "${LDAP_SERVICE_ROLE:-provider}" = "meta" ]; then
+  exit 0
+fi
+
+for _ in $(seq 1 30); do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s sub -LLL '(objectClass=olcSyncProvConfig)' dn 2>/dev/null | grep -q '^dn:'; then
+  echo "[init_replication_provider] Overlay syncprov déjà présent."
+else
+  echo "[init_replication_provider] Chargement module syncprov.la sur cn=module{0}..."
+  ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' 2>/dev/null || true
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: syncprov.la
+EOF
+  echo "[init_replication_provider] Ajout overlay syncprov sur mdb {1}..."
+  ldapadd -H ldapi:/// -Y EXTERNAL <<'EOF'
+dn: olcOverlay=syncprov,olcDatabase={1}mdb,cn=config
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov
+EOF
+fi
+
+if ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s base -LLL olcServerID 2>/dev/null | grep -q "^olcServerID: 1"; then
+  echo "[init_replication_provider] olcServerID=1 déjà présent."
+else
+  echo "[init_replication_provider] Ajout olcServerID=1..."
+  ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' 2>/dev/null || true
+dn: cn=config
+changetype: modify
+add: olcServerID
+olcServerID: 1
+EOF
+fi
+
+echo "[init_replication_provider] Index entryUUID (recommandé pour syncrepl)..."
+ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' 2>/dev/null || true
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcDbIndex
+olcDbIndex: entryUUID eq
+EOF
+
+echo "[init_replication_provider] Terminé."
+\end{verbatim}
+}
+
+\section{Script \texttt{scripts/init\_replication\_consumer.sh}}\label{ann:repl-consumer}
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+# Réplica en lecture seule : olcSyncrepl + olcReadOnly (les écritures client sont refusées, pas la synchro).
+set -uo pipefail
+
+if [ "${LDAP_SERVICE_ROLE:-provider}" != "consumer" ]; then
+  exit 0
+fi
+
+BASE_DN=${LDAP_BASE_DN:-dc=example,dc=org}
+ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-admin}
+PROVIDER_URI=${LDAP_REPLICATION_PROVIDER_URI:-ldap://ldap:389}
+
+for _ in $(seq 1 30); do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+echo "[init_replication_consumer] Attente du fournisseur ${PROVIDER_URI}..."
+ready=0
+for _ in $(seq 1 90); do
+  if ldapsearch -x -H "$PROVIDER_URI" -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "$BASE_DN" -s base dn >/dev/null 2>&1 \
+    && ldapsearch -x -H "$PROVIDER_URI" -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "ou=people,$BASE_DN" -s base dn >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+if [ "$ready" != 1 ]; then
+  echo "[init_replication_consumer] AVERTISSEMENT : fournisseur peu joignable ; syncrepl pourrait échouer au démarrage."
+fi
+
+if ! ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s base -LLL olcServerID 2>/dev/null | grep -q "^olcServerID: 2"; then
+  echo "[init_replication_consumer] olcServerID=2 sur cn=config..."
+  ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' 2>/dev/null || true
+dn: cn=config
+changetype: modify
+add: olcServerID
+olcServerID: 2
+EOF
+fi
+
+if ldapsearch -H ldapi:/// -Y EXTERNAL -b olcDatabase={1}mdb,cn=config -s base -LLL olcSyncrepl 2>/dev/null | grep -q "^olcSyncrepl:"; then
+  echo "[init_replication_consumer] olcSyncrepl déjà configuré."
+  exit 0
+fi
+
+echo "[init_replication_consumer] Configuration olcSyncrepl + olcReadOnly..."
+ldapmodify -H ldapi:/// -Y EXTERNAL <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcReadOnly
+olcReadOnly: TRUE
+-
+add: olcSyncrepl
+olcSyncrepl: rid=001 provider=${PROVIDER_URI} bindmethod=simple binddn="cn=admin,${BASE_DN}" credentials=${ADMIN_PASS} searchbase="${BASE_DN}" type=refreshAndPersist retry="60 +" timeout=1 schemachecking=off scope=sub
+EOF
+
+echo "[init_replication_consumer] Terminé."
+\end{verbatim}
+}
+
+\section{Script \texttt{scripts/init\_meta\_annuaire.sh}}\label{ann:init-meta}
+\noindent\small\textit{Dans l'image Docker : copié en \texttt{/container/init\_meta\_annuaire.sh} (hors \texttt{init.d}), appelé par \texttt{init\_ldap.sh} si \texttt{LDAP\_SERVICE\_ROLE=meta}.}\par\medskip
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+# Méta-annuaire OpenLDAP (back-meta) : agrège plusieurs annuaires via suffixmassage.
+# Invoqué depuis init_ldap.sh lorsque LDAP_SERVICE_ROLE=meta.
+set -euo pipefail
+
+ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-admin}
+META_SUFFIX=${LDAP_META_SUFFIX:-o=federation}
+META_ROOT_DN="cn=admin,${META_SUFFIX}"
+
+EX_URI=${LDAP_META_EXAMPLE_URI:-ldap://ldap:389}
+EX_REAL=${LDAP_META_EXAMPLE_SUFFIX:-dc=example,dc=org}
+EX_VIRT=${LDAP_META_EXAMPLE_VIRTUAL:-ou=example-org,o=federation}
+
+AC_URI=${LDAP_META_ACME_URI:-ldap://ldap-acme:389}
+AC_REAL=${LDAP_META_ACME_SUFFIX:-dc=acme,dc=com}
+AC_VIRT=${LDAP_META_ACME_VIRTUAL:-ou=acme-corp,o=federation}
+
+export LDAPTLS_REQCERT=never
+
+for _ in $(seq 1 30); do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+echo "[init_meta] Suppression de la base mdb par défaut..."
+ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' || true
+dn: olcDatabase={1}mdb,cn=config
+changetype: delete
+EOF
+
+echo "[init_meta] Purge des fichiers mdb et redémarrage de slapd..."
+pkill -u openldap -TERM slapd 2>/dev/null || pkill -TERM slapd 2>/dev/null || true
+for _ in $(seq 1 40); do
+  pgrep slapd >/dev/null 2>&1 || break
+  sleep 0.25
+done
+pkill -u openldap -KILL slapd 2>/dev/null || pkill -KILL slapd 2>/dev/null || true
+find /var/lib/ldap -mindepth 1 -delete 2>/dev/null || true
+chown openldap:openldap /var/lib/ldap
+slapd -h "ldap:/// ldapi:///" -u openldap -g openldap -F /etc/ldap/slapd.d &
+for _ in $(seq 1 60); do
+  if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if ! ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=module{0},cn=config -s base -LLL olcModuleLoad 2>/dev/null | grep -qF back_ldap; then
+  echo "[init_meta] Chargement des modules back_ldap (requis par back_meta) puis back_meta..."
+  ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' || true
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: back_ldap.la
+-
+add: olcModuleLoad
+olcModuleLoad: back_meta.la
+EOF
+fi
+
+HASH=$(slappasswd -s "$ADMIN_PASS")
+echo "[init_meta] Création de la base meta (suffix=$META_SUFFIX)..."
+ldapadd -H ldapi:/// -Y EXTERNAL <<EOF
+dn: olcDatabase=meta,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMetaConfig
+olcDatabase: meta
+olcSuffix: $META_SUFFIX
+olcRootDN: $META_ROOT_DN
+olcRootPW: $HASH
+olcDbOnErr: continue
+olcDbCancel: abandon
+olcDbTFSupport: no
+olcAccess: to * by dn.exact=$META_ROOT_DN manage by * read
+EOF
+
+META_DB_DN=$(ldapsearch -H ldapi:/// -Y EXTERNAL -b cn=config -s one -LLL '(olcDatabase=meta)' dn 2>/dev/null | sed -n 's/^dn: //p' | head -1)
+if [ -z "$META_DB_DN" ]; then
+  echo "[init_meta] ERREUR : entrée olcDatabase meta introuvable dans cn=config."
+  exit 1
+fi
+
+# Le namingContext dans olcDbURI doit être un sous-arbre du suffixe meta (olcSuffix), pas le suffixe réel du backend.
+echo "[init_meta] Cible meta : $EX_VIRT → $EX_URI + suffixmassage → $EX_REAL"
+ldapadd -H ldapi:/// -Y EXTERNAL <<EOF
+dn: olcMetaSub={0}example,$META_DB_DN
+objectClass: olcConfig
+objectClass: olcMetaTargetConfig
+olcMetaSub: {0}example
+olcDbURI: $EX_URI/$EX_VIRT
+olcDbRewrite: {0}suffixmassage "$EX_VIRT" "$EX_REAL"
+olcDbIDAssertBind: bindmethod=simple binddn="cn=admin,$EX_REAL" credentials=$ADMIN_PASS
+olcDbChaseReferrals: FALSE
+EOF
+
+echo "[init_meta] Cible meta : $AC_VIRT → $AC_URI + suffixmassage → $AC_REAL"
+ldapadd -H ldapi:/// -Y EXTERNAL <<EOF
+dn: olcMetaSub={1}acme,$META_DB_DN
+objectClass: olcConfig
+objectClass: olcMetaTargetConfig
+olcMetaSub: {1}acme
+olcDbURI: $AC_URI/$AC_VIRT
+olcDbRewrite: {0}suffixmassage "$AC_VIRT" "$AC_REAL"
+olcDbIDAssertBind: bindmethod=simple binddn="cn=admin,$AC_REAL" credentials=$ADMIN_PASS
+olcDbChaseReferrals: FALSE
+EOF
+
+echo "[init_meta] Méta-annuaire configuré ($META_SUFFIX)."
+exit 0
+\end{verbatim}
+}
+
+\section{Script \texttt{scripts/configure\_keycloak\_ldap.sh} (machine hôte)}\label{ann:keycloak-sh}
+\noindent\small\textit{Hors image : à exécuter sur la machine hôte après \texttt{docker compose up -d}. Fichier dans le dépôt : \texttt{projet/scripts/configure\_keycloak\_ldap.sh} (ex.\ \texttt{bash projet/scripts/configure\_keycloak\_ldap.sh} depuis la racine du clone, ou \texttt{bash scripts/configure\_keycloak\_ldap.sh} depuis \texttt{projet/}). Pas de second listing dans le corps du guide.}\par\medskip
+{\footnotesize
+\begin{verbatim}
+#!/usr/bin/env bash
+# Configure Keycloak : realm + User Federation LDAP (API d'administration).
+# À lancer depuis la machine hôte une fois « docker compose up -d » (Keycloak joindra ldap:389).
+set -euo pipefail
+
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8090}"
+KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+REALM="${KEYCLOAK_REALM:-tp-ldap}"
+LDAP_CONNECTION_URL="${KEYCLOAK_LDAP_CONNECTION:-ldap://ldap:389}"
+LDAP_BIND_DN="${LDAP_BIND_DN:-cn=admin,dc=example,dc=org}"
+LDAP_BIND_PW="${LDAP_BIND_PW:-admin}"
+LDAP_USERS_DN="${LDAP_USERS_DN:-ou=people,dc=example,dc=org}"
+
+echo "[configure_keycloak_ldap] Attente de Keycloak (${KEYCLOAK_URL})..."
+ready=0
+for _ in $(seq 1 90); do
+  if curl -sf "${KEYCLOAK_URL}/realms/master" >/dev/null; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+if [ "$ready" != 1 ]; then
+  echo "[configure_keycloak_ldap] ERREUR : Keycloak ne répond pas à temps."
+  exit 1
+fi
+
+echo "[configure_keycloak_ldap] Obtention du jeton admin-cli..."
+TOKEN_JSON=$(curl -sS -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=${KEYCLOAK_ADMIN}" \
+  --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}")
+
+TOKEN=$(printf '%s' "$TOKEN_JSON" | python3 -c "import sys, json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+if [ -z "$TOKEN" ]; then
+  echo "[configure_keycloak_ldap] ERREUR : impossible d'obtenir access_token. Réponse :"
+  printf '%s\n' "$TOKEN_JSON"
+  exit 1
+fi
+
+AUTH_HDR=(curl -sS -H "Authorization: Bearer ${TOKEN}")
+REALM_CODE=$("${AUTH_HDR[@]}" -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/admin/realms/${REALM}")
+
+if [ "$REALM_CODE" != "200" ]; then
+  echo "[configure_keycloak_ldap] Création du realm « ${REALM} » (HTTP realm=${REALM_CODE})..."
+  HTTP_CREATE=$("${AUTH_HDR[@]}" -o /dev/null -w "%{http_code}" -X POST "${KEYCLOAK_URL}/admin/realms" \
+    -H "Content-Type: application/json" \
+    -d "$(python3 -c "import json; print(json.dumps({'realm':'${REALM}','enabled':True,'displayName':'TP LDAP','registrationAllowed':False,'loginWithEmailAllowed':True,'duplicateEmailsAllowed':False}))")")
+  if [ "$HTTP_CREATE" != "201" ]; then
+    echo "[configure_keycloak_ldap] ERREUR : création realm HTTP ${HTTP_CREATE}"
+    exit 1
+  fi
+else
+  echo "[configure_keycloak_ldap] Realm « ${REALM} » déjà présent."
+fi
+
+EXISTING_ID=$("${AUTH_HDR[@]}" "${KEYCLOAK_URL}/admin/realms/${REALM}/components?type=org.keycloak.storage.UserStorageProvider" | python3 -c "
+import sys, json
+try:
+    for c in json.load(sys.stdin):
+        if c.get('providerId') == 'ldap':
+            print(c.get('id', '') or '')
+            break
+except json.JSONDecodeError:
+    pass
+")
+
+if [ -n "$EXISTING_ID" ]; then
+  echo "[configure_keycloak_ldap] Fournisseur LDAP déjà configuré (id=${EXISTING_ID})."
+  STORAGE_ID="$EXISTING_ID"
+else
+  echo "[configure_keycloak_ldap] Création du composant User Federation LDAP..."
+  REALM_INTERNAL_ID=$("${AUTH_HDR[@]}" "${KEYCLOAK_URL}/admin/realms/${REALM}" | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+
+  export _KC_REALM_INTERNAL_ID="$REALM_INTERNAL_ID"
+  export _KC_LDAP_URL="$LDAP_CONNECTION_URL"
+  export _KC_LDAP_BIND_DN="$LDAP_BIND_DN"
+  export _KC_LDAP_BIND_PW="$LDAP_BIND_PW"
+  export _KC_LDAP_USERS_DN="$LDAP_USERS_DN"
+  BODY=$(python3 <<'PY'
+import json, os
+print(json.dumps({
+  "name": "ldap",
+  "providerId": "ldap",
+  "providerType": "org.keycloak.storage.UserStorageProvider",
+  "parentId": os.environ["_KC_REALM_INTERNAL_ID"],
+  "config": {
+    "enabled": ["true"],
+    "priority": ["0"],
+    "importEnabled": ["true"],
+    "editMode": ["READ_ONLY"],
+    "syncRegistrations": ["false"],
+    "vendor": ["other"],
+    "usernameLDAPAttribute": ["uid"],
+    "rdnLDAPAttribute": ["uid"],
+    "uuidLDAPAttribute": ["entryUUID"],
+    "userObjectClasses": ["inetOrgPerson, organizationalPerson"],
+    "connectionUrl": [os.environ["_KC_LDAP_URL"]],
+    "bindDn": [os.environ["_KC_LDAP_BIND_DN"]],
+    "bindCredential": [os.environ["_KC_LDAP_BIND_PW"]],
+    "usersDn": [os.environ["_KC_LDAP_USERS_DN"]],
+    "authType": ["simple"],
+    "searchScope": ["2"],
+    "pagination": ["true"],
+    "connectionPooling": ["true"],
+    "startTls": ["false"],
+  },
+}))
+PY
+)
+  unset _KC_REALM_INTERNAL_ID _KC_LDAP_URL _KC_LDAP_BIND_DN _KC_LDAP_BIND_PW _KC_LDAP_USERS_DN
+  CREATE_OUT=$(mktemp)
+  HTTP_CODE=$(curl -sS -o "$CREATE_OUT" -w "%{http_code}" -X POST \
+    "${KEYCLOAK_URL}/admin/realms/${REALM}/components" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$BODY")
+  if [ "$HTTP_CODE" != "201" ]; then
+    echo "[configure_keycloak_ldap] ERREUR création LDAP provider (HTTP ${HTTP_CODE}) :"
+    cat "$CREATE_OUT"
+    rm -f "$CREATE_OUT"
+    exit 1
+  fi
+  rm -f "$CREATE_OUT"
+  STORAGE_ID=$("${AUTH_HDR[@]}" "${KEYCLOAK_URL}/admin/realms/${REALM}/components?type=org.keycloak.storage.UserStorageProvider" | python3 -c "
+import sys, json
+for c in json.load(sys.stdin):
+    if c.get('providerId') == 'ldap':
+        print(c['id'])
+        break
+")
+  if [ -z "$STORAGE_ID" ]; then
+    echo "[configure_keycloak_ldap] ERREUR : id du stockage LDAP introuvable après création."
+    exit 1
+  fi
+fi
+
+echo "[configure_keycloak_ldap] Synchronisation complète des utilisateurs LDAP..."
+SYNC_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
+  "${KEYCLOAK_URL}/admin/realms/${REALM}/user-storage/${STORAGE_ID}/sync?action=triggerFullSync" \
+  -H "Authorization: Bearer ${TOKEN}")
+if [ "$SYNC_CODE" != "204" ] && [ "$SYNC_CODE" != "200" ]; then
+  echo "[configure_keycloak_ldap] AVERTISSEMENT : sync HTTP ${SYNC_CODE} (souvent acceptable si déjà synchronisé)."
+fi
+
+echo "[configure_keycloak_ldap] Terminé. Console : ${KEYCLOAK_URL}/admin/ - realm « ${REALM} »."
+\end{verbatim}
+}
+

@@ -1,15 +1,4 @@
-# TP LDAP — Partie 3 : Discrétisation des rôles et ACL
-
-> **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 3 / 7 — *Discrétisation des rôles et ACL* (`INSTRUCTIONS.md`, même intitulé).  
-> **Prérequis** : *Parties 1 et 2* — déploiement opérationnel et **DIT** présent (`ou=people`, `ou=groups`, comptes et groupes créés dans **`projet/scripts/init_ldap.sh`**). Les ACL du présent chapitre s’appliquent à **`olcDatabase={1}mdb,cn=config`**.  
-> **Convention dépôt** : groupe d’administration annuaire **`cn=admin_ldap,ou=groups,$BASE_DN`** ; groupe fonctionnel **`cn=developers`** ; modifications **`cn=config`** via **`ldapmodify -Y EXTERNAL -H ldapi:///`** depuis le conteneur.  
-> **Chapitre précédent** : *Partie 2 — Conception de la structure DIT*.  
-> **Chapitre suivant** : *Partie 4 — Intégration Linux (PAM / NSS)* (`documentation/partie-04-integration-linux.md`).
-
-Ce document décrit la **séparation des rôles** par des groupes LDAP et la **mise en place des ACL** sur la base MDB, au titre de **`INSTRUCTIONS.md`** (section « Discrétisation des rôles et ACL »). La logique attendue est **itérative** : une action LDAP doit échouer ou réussir selon l’identité et le groupe — ici une grande partie est **automatisée** dans **`projet/scripts/init_ldap.sh`** ; les tests manuels restent utiles pour valider le comportement réel des règles.
-
----
+# TP LDAP - Partie 3 : Discrétisation des rôles et ACL
 
 ## 1. Groupes et rôles
 
@@ -21,10 +10,10 @@ Les instructions prévoient notamment :
 
 **Dans le projet :**
 
-| Groupe | DN typique | Rôle |
-|--------|------------|------|
+| Groupe       | DN typique                         | Rôle                                       |
+| ------------ | ---------------------------------- | ------------------------------------------ |
 | `admin_ldap` | `cn=admin_ldap,ou=groups,$BASE_DN` | Délégation d’administration (ACL `manage`) |
-| `developers` | `cn=developers,ou=groups,$BASE_DN` | Groupe fonctionnel exemple |
+| `developers` | `cn=developers,ou=groups,$BASE_DN` | Groupe fonctionnel exemple                 |
 
 Les membres sont **`uid=thomas`** (admin LDAP) et **`uid=john`** (développeur). Lors de la création initiale, les groupes sont des **`groupOfNames`** avec la contrainte de membre obligatoire ; le script remplace ensuite le membre factice par l’utilisateur réel.
 
@@ -64,7 +53,7 @@ Un second ajout définit notamment :
 2. Sur la **racine DSE** `dn.base=""` : lecture pour tous ;
 3. Sur **le reste** : **`manage`** pour **`admin_ldap`**, écriture **`self`**, lecture **`users`**, etc.
 
-Schéma d’intention (reformulation pédagogique) : *« Seuls les administrateurs de l’annuaire (groupe) gèrent tout le contenu ; les utilisateurs authentifiés peuvent lire selon la règle ; chacun peut toucher à ce qui le concerne directement (`self`) sur les attributs concernés. »*
+Schéma d’intention (reformulation pédagogique) : _« Seuls les administrateurs de l’annuaire (groupe) gèrent tout le contenu ; les utilisateurs authentifiés peuvent lire selon la règle ; chacun peut toucher à ce qui le concerne directement (`self`) sur les attributs concernés. »_
 
 ---
 
@@ -84,24 +73,4 @@ ldapadd -x -H ldap://localhost:389 \
   -f /chemin/vers/entree-test.ldif
 ```
 
-**NOTA :** l’**ordre** et l’**empilement** des directives **`olcAccess`** en OpenLDAP sont déterminants. Avant toute modification manuelle : **lister** les règles actuelles (`ldapsearch -Y EXTERNAL -H ldapi:/// -b cn=config`), puis **ajouter** ou **remplacer** avec précaution pour éviter de se couper l’accès.
-
----
-
-## 5. Synthèse de la partie 3
-
-| Attendu | Réalisation |
-|---------|-------------|
-| Groupe `admin_ldap` | Oui |
-| Groupe fonctionnel | Oui (`developers`) |
-| ACL admin + self + protection `userPassword` | Oui (voir script) |
-| `admin_keycloak` | Oui (voir *Partie 5 — Keycloak*) |
-| Éviter `cn=admin` au quotidien | Partiel |
-
-**Pistes de finalisation** : aligner les ACL sur un modèle **explicite** type installation Debian courante (`userPassword`, `shadowLastChange`, lecture contrôlée du reste) ; ajouter des **tests automatisés** qui échouent puis réussissent selon le compte. Le groupe **`admin_keycloak`** est présent depuis la *Partie 5 — Keycloak* (`init_ldap.sh`).
-
----
-
-**Fin du chapitre 3 / 7** — La suite logique est la *Partie 4 — Intégration Linux (PAM / NSS)* : les mêmes utilisateurs et groupes sont exposés à NSS/PAM après enrichissement POSIX.
-
-*Référence : `INSTRUCTIONS.md` — section « Discrétisation des rôles et ACL ».*
+**NOTE :** l’**ordre** et l’**empilement** des directives **`olcAccess`** en OpenLDAP sont déterminants. Avant toute modification manuelle : **lister** les règles actuelles (`ldapsearch -Y EXTERNAL -H ldapi:/// -b cn=config`), puis **ajouter** ou **remplacer** avec précaution pour éviter de se couper l’accès.

@@ -1,15 +1,4 @@
-# TP LDAP — Partie 4 : Intégration Linux (PAM / NSS)
-
-> **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 4 / 7 — *Intégration Linux (PAM/NSS)* (`INSTRUCTIONS.md`, même intitulé).  
-> **Prérequis** : *Parties 1 à 3* — annuaire joignable, **DIT** et **ACL** en place ; le script **`projet/scripts/init_ldap_linux_integration.sh`** est exécuté **après** `init_ldap.sh` dans le conteneur (fichier **`20-init_ldap_linux_integration.sh`** dans `/container/init.d/`).  
-> **Convention dépôt** : tests `getent` depuis l’hôte avec `docker exec ldap …` ; couverture automatisée dans **`projet/test/test_04_integration_linux.sh`**, et suite complète via **`projet/test/test_all_implemented.sh`**.  
-> **Chapitre précédent** : *Partie 3 — Discrétisation des rôles et ACL*.  
-> **Chapitre suivant** : *Partie 5 — Intégration Keycloak (OpenID)* (`documentation/partie-05-keycloak.md`).
-
-Ce document décrit la **mise en relation d’un système Linux** (ici : le **même conteneur** que celui qui exécute `slapd`) avec l’annuaire LDAP pour la **résolution des noms** (NSS) et l’**authentification** (PAM). Il correspond à la section « Intégration Linux (PAM/NSS) » de **`INSTRUCTIONS.md`**. Démarche : partir des objectifs de test (`getent`, puis login), configurer **NSS**, **PAM**, le démon de liaison (**nslcd**), puis **vérifier** à chaque étape.
-
----
+# TP LDAP - Partie 4 : Intégration Linux (PAM / NSS)
 
 ## 1. Objectif fonctionnel
 
@@ -19,7 +8,7 @@ Les instructions demandent :
 2. **PAM** : authentification contre LDAP ;
 3. **Tests** : `getent passwd`, `getent group`, et idéalement `su`, `ssh`, etc.
 
-Dans le projet, la configuration est appliquée par le script **`projet/scripts/init_ldap_linux_integration.sh`**, exécuté **après** `init_ldap.sh` grâce à l’ordre numérique des fichiers dans `/container/init.d/`.
+Dans le projet, la configuration est appliquée par **`projet/scripts/init_ldap_linux_integration.sh`**, lancé **après** `init_ldap.sh` (ordre défini dans `entrypoint.sh`).
 
 ---
 
@@ -78,22 +67,3 @@ docker exec ldap getent group developers
 Le script **`projet/test/test_04_integration_linux.sh`** automatise ces contrôles depuis l’hôte (via `docker exec`) ; la suite **`test_all_implemented.sh`** enchaîne les objectifs **1 à 6** (ordre pédagogique du dépôt).
 
 Pour l’**authentification** (`su`, `ssh`), le comportement dépend du shell, des droits et du fait que `sshd` soit correctement configuré dans l’image. **À prévoir pour finaliser** : un test manuel `docker exec -it ldap su - thomas` ou une connexion SSH depuis l’hôte si le port est publié et sécurisé pour la démo.
-
----
-
-## 7. Synthèse de la partie 4
-
-| Attendu | Réalisation |
-|---------|-------------|
-| NSS (passwd / group) | Oui |
-| PAM (auth) | Oui |
-| `getent passwd` / `getent group` | Oui (+ tests script) |
-| `su` / `ssh` | À valider / documenter selon votre environnement |
-
-**Pistes de finalisation** : remplacer le bind **`cn=admin`** dans `nslcd.conf` par un **compte dédié** en lecture seule (alignement avec la *Partie 3*) ; conserver des traces (`journalctl`, logs nslcd) pour la documentation ; joindre une preuve de **`su`** ou de session réussie si le rendu l’exige.
-
----
-
-**Fin du chapitre 4 / 7** — La suite logique est la *Partie 5 — Intégration Keycloak (OpenID)* : réutilisation du même annuaire comme fournisseur d’identité pour un IdP séparé.
-
-*Référence : `INSTRUCTIONS.md` — section « Intégration Linux (PAM/NSS) ».*

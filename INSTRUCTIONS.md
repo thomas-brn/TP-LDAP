@@ -1,4 +1,4 @@
-# TP LDAP — OpenLDAP 2.6
+# TP LDAP - OpenLDAP 2.6
 
 ## Objectifs
 

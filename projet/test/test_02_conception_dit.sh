@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 2 — Conception de la structure DIT
+# Objectif 2 - Conception de la structure DIT
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -37,7 +37,7 @@ test_function "Groupe developers existe" \
 test_function "Groupe admin_keycloak existe" \
     "ldapsearch -x -H ldap://localhost:389 -b ou=groups,$BASE_DN '(cn=admin_keycloak)' dn >/dev/null 2>&1"
 
-print_objectif_summary "Objectif 2 — résumé"
+print_objectif_summary "Objectif 2 - résumé"
 
 if [ "$FAILED_TESTS" -gt 0 ]; then
     exit 1

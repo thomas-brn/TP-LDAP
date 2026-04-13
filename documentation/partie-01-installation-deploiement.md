@@ -1,14 +1,4 @@
-# TP LDAP — Partie 1 : Installation et déploiement automatisé
-
-> **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 1 / 7 — *Installation et déploiement automatisé* (`INSTRUCTIONS.md`, même intitulé).  
-> **Prérequis** : dépôt TP-LDAP, Docker ; aucun autre chapitre du rapport n’est nécessaire avant celui-ci.  
-> **Convention dépôt** : cahier des charges **`INSTRUCTIONS.md`** à la racine ; service conteneur **`ldap`** ; variables `LDAP_*` définies dans **`projet/docker-compose.yml`**.  
-> **Chapitre suivant** : *Partie 2 — Conception de la structure DIT* (`documentation/partie-02-conception-dit.md`).
-
-Ce document décrit la mise en place de l’infrastructure **OpenLDAP 2.6** dans un environnement **Docker**, conformément à la section « Installation et déploiement automatisé » du fichier **`INSTRUCTIONS.md`** à la racine du dépôt. Il est rédigé comme une **notice technique** : objectifs, fichiers concernés, enchaînement au démarrage, puis vérifications que tout lecteur peut rejouer sans autre prérequis que ce dépôt et Docker.
-
----
+# TP LDAP - Partie 1 : Installation et déploiement automatisé
 
 ## 1. Recherche de la cible à déployer
 
@@ -48,7 +38,7 @@ Le serveur doit écouter en **LDAP** et exposer une socket **`ldapi`** pour l’
 1. garantit l’existence de **`cn=config`** (configuration dynamique sous `/etc/ldap/slapd.d`) si le volume est vide ;
 2. démarre **`slapd`** en arrière-plan avec **`ldap:///`** et **`ldapi:///`**, sous l’utilisateur système **`openldap`** ;
 3. attend la présence du **socket `ldapi`** (chemin typique `/run/slapd/ldapi`), nécessaire pour les commandes `ldapmodify -Y EXTERNAL` utilisées plus loin ;
-4. exécute **séquentiellement** les scripts placés dans `/container/init.d/` (montés depuis le build : `10-init_ldap.sh`, `20-init_ldap_linux_integration.sh`, etc.).
+4. exécute **dans un ordre fixe** les scripts dans `/container/init.d/` : `init_ldap.sh`, `init_ldap_linux_integration.sh`, `init_replication_provider.sh`, `init_replication_consumer.sh` (définis dans `entrypoint.sh`).
 
 Une fois ces étapes passées, **`slapd`** tourne en arrière-plan : la configuration est **persistée** sous **`cn=config`** et les opérations d’administration locale passent par **`ldapi:///`** avec **SASL EXTERNAL** (voir les scripts dans `projet/scripts/`).
 
@@ -86,22 +76,3 @@ ldapsearch -x -H ldap://localhost:389 -b "${LDAP_BASE_DN:-dc=example,dc=org}" -s
 ```
 
 (adaptez `LDAP_BASE_DN` à la valeur définie dans **`projet/docker-compose.yml`**, par défaut `dc=example,dc=org`.)
-
----
-
-## 6. Synthèse de la partie 1
-
-| Attendu (instructions) | Réalisation dans le projet |
-|--------------------------|----------------------------|
-| Dockerfile `debian:bookworm-slim`, `slapd`, `ldap-utils`, ports | Oui (`projet/docker/Dockerfile`) |
-| Script d’init sans interaction, LDIF / `ldap*` | Oui (`projet/scripts/init_ldap.sh` + second script Linux) |
-| `projet/docker-compose.yml`, volumes, une commande pour tout lancer | Oui |
-| Entrypoint avec boucle `sleep` | Oui (`sleep infinity` dans `projet/docker/entrypoint.sh`) |
-
-**Pistes de finalisation** : consigner les valeurs réelles utilisées (`LDAP_*`) dans la documentation du binôme ou du projet ; vérifier une remontée complète depuis des **volumes vides** (`docker compose down -v` puis `up`) puis un simple `restart` pour valider la persistance ; ajuster `LDAP_TLS` si vous activez LDAPS.
-
----
-
-**Fin du chapitre 1 / 7** — La suite logique du rapport est la *Partie 2 — Conception de la structure DIT* : suffixe, unités organisationnelles et peuplement LDAP une fois le conteneur opérationnel.
-
-*Référence : `INSTRUCTIONS.md` — section « Installation et déploiement automatisé ».*

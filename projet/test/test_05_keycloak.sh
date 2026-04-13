@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 5 — Intégration Keycloak (User Federation LDAP)
+# Objectif 5 - Intégration Keycloak (User Federation LDAP)
 # Prérequis : depuis projet/, « docker compose up -d » (ldap + keycloak).
 set -uo pipefail
 
@@ -51,7 +51,7 @@ test_function "Utilisateur thomas présent dans Keycloak (import LDAP)" \
 test_function "Utilisateur john présent dans Keycloak (import LDAP)" \
   "verify_kc_user john"
 
-print_objectif_summary "Objectif 5 — résumé"
+print_objectif_summary "Objectif 5 - résumé"
 
 if [ "$FAILED_TESTS" -gt 0 ]; then
   exit 1

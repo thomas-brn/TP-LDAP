@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 4 — Intégration Linux (PAM/NSS)
+# Objectif 4 - Intégration Linux (PAM/NSS)
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -37,7 +37,7 @@ test_with_output "Groupe POSIX admin_ldap" \
 test_with_output "Groupe POSIX developers" \
     "docker exec ldap bash -c 'getent group developers'"
 
-print_objectif_summary "Objectif 4 — résumé"
+print_objectif_summary "Objectif 4 - résumé"
 
 if [ "$FAILED_TESTS" -gt 0 ]; then
     exit 1

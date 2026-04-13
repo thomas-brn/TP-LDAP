@@ -1,0 +1,1101 @@
+% !TEX TS-program = pdflatex
+% Manuel opérateur - OpenLDAP 2.6 sous Docker (Debian 12).
+% Annexes : \input{annexe-code-inclus.tex} (même dossier que ce .tex).
+
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{listings}
+\IfFileExists{listingsutf8.sty}{\usepackage{listingsutf8}}{}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{url}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black, citecolor=blue!60!black}
+
+\definecolor{codebg}{gray}{0.95}
+\lstdefinestyle{bashstyle}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0.2pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+}
+\lstdefinestyle{ldifstyle}{
+  language=,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0.2pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+}
+\lstdefinestyle{ymlstyle}{
+  language=,
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0.2pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+}
+% Les $ du docker-compose ($$VAR) et des scripts déclenchent le mode math si non neutralisés
+\lstset{style=bashstyle, mathescape=false, upquote=true,
+  literate=*{\$}{{\textdollar}}1
+}
+\newcommand{\bash}[1]{\lstinline[style=bashstyle, basicstyle=\ttfamily]{#1}}
+
+\newsavebox{\notabox}
+\newenvironment{nota}{%
+  \par\medskip\noindent
+  \begin{lrbox}{\notabox}%
+  \begin{minipage}{0.97\linewidth}%
+  \small
+  \textbf{Remarque :}~%
+}{%
+  \end{minipage}%
+  \end{lrbox}%
+  {\setlength{\fboxsep}{6pt}%
+   \fcolorbox{black!15}{black!3}{\usebox{\notabox}}}%
+  \par\medskip
+}
+
+\title{OpenLDAP 2.6 sous Docker\\Manuel d'exploitation et de validation}
+\author{Thomas Broine}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Guide pas à pas pour monter OpenLDAP sous Docker, avec \textbf{commandes et LDIF à copier-coller}. Les chapitres techniques suivent une même logique : \textbf{objectif}, \textbf{notions}, \textbf{déroulé} (étapes ou paramètres), lien avec l'\textbf{annexe} lorsqu'un script reprend la même chose, puis \textbf{tests} et résultats attendus. L'\textbf{annexe} regroupe les fichiers Docker et les scripts du build ; le détail LDAP manuel est dans le corps du document (sauf Keycloak, dont le script complet est en annexe).
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\chapter{Introduction : annuaire LDAP et périmètre du lab}
+
+\section{Objets et vocabulaire}
+
+Un annuaire LDAP stocke des \textbf{entrées} identifiées par un \textbf{DN} (nom distinctif), organisées en arbre sous un \textbf{suffixe} (base DN). Les schémas fixent les \textbf{classes d'objet} et \textbf{attributs} autorisés. OpenLDAP~2.6 sépare couramment :
+\begin{itemize}[leftmargin=*]
+  \item \textbf{\texttt{cn=config}} : configuration du serveur (bases, modules, ACL \texttt{olcAccess}, réplication) ;
+  \item le \textbf{suffixe métier} (ex.\ \texttt{dc=example,dc=org}) : utilisateurs, groupes, applications.
+\end{itemize}
+
+\section{Architecture logique du lab}
+
+\begin{verbatim}
+Hôte (Docker)
+  ldap:389          -> fournisseur RW, DIT dc=example,dc=org (+ syncprov)
+  ldap-replica:1389 -> réplica RO (syncrepl)
+  ldap-acme:2389    -> second annuaire dc=acme,dc=com
+  ldap-meta:3389    -> méta back-meta, suffixe o=federation
+  keycloak:8090     -> Keycloak (fédération LDAP -> realm tp-ldap)
+\end{verbatim}
+
+L'annexe~\ref{ann:infra} contient les fichiers pour lancer la stack Docker du TP. La suite du document décrit surtout les \textbf{commandes LDAP} équivalentes à une mise en place manuelle.
+
+\section{Organisation des chapitres suivants}
+
+\begin{tabular}{@{}p{0.34\linewidth}p{0.60\linewidth}@{}}
+\toprule
+\textbf{Partie} & \textbf{Contenu} \\
+\midrule
+Prérequis & Stack Docker, identifiants, premier contrôle LDAP. \\
+Init LDIF & Création du DIT et des ACL (cœur du serveur \texttt{ldap}). \\
+Rôles / ACL & Validation des droits et des authentifications. \\
+Linux & NSS/PAM et comptes POSIX dans le conteneur. \\
+Keycloak & Fédération LDAP, API admin, script en annexe. \\
+Réplication & Fournisseur / réplica et tests de propagation. \\
+Méta & Agrégation \texttt{ldap} + \texttt{ldap-acme} sous \texttt{o=federation}. \\
+Synthèse & Enchaînement global et dépannage. \\
+\bottomrule
+\end{tabular}
+
+%======================================================================
+\chapter{Comment utiliser ce guide}\label{chap:guide-autonome}
+
+Le fil principal est : \textbf{commandes et LDIF} dans chaque chapitre. Pour monter les conteneurs, reprenez le compose et l'image depuis l'annexe (\ref{ann:compose} à \ref{ann:entrypoint}).
+
+\textbf{Ordre conseillé :} (1)~fichiers Docker depuis l'annexe ; (2)~\bash{docker compose up -d --build} (ch.~\ref{chap:prereq}) ; (3)~ch.~\ref{chap:init-ldif}, puis intégration Linux, ACL, réplication, méta, Keycloak.
+
+\begin{nota}
+Dans les listings, \texttt{\textbackslash\{1\textbackslash\}} sert à \LaTeX{} ; dans vos LDIF réels, mettez \texttt{\{1\}}.
+\end{nota}
+
+\begin{nota}
+\textbf{Forme des chapitres techniques :} comme pour Keycloak, chaque grande partie commence par l'\textbf{objectif} et des \textbf{notions utiles}, puis un \textbf{déroulé} (étapes numérotées ou commandes), le lien avec l'\textbf{annexe} lorsqu'un script reprend la même logique, et enfin des \textbf{tests} avec \textbf{résultat attendu}.
+\end{nota}
+
+%======================================================================
+\chapter{Prérequis et démarrage de l'infrastructure}\label{chap:prereq}
+
+\section{Objectif de ce chapitre}
+
+Mettre en route la \textbf{stack Docker} du TP et vérifier que le service LDAP principal répond avant d'appliquer les LDIF des chapitres suivants (ou de vous appuyer sur l'automatisation déjà embarquée dans l'image).
+
+\section{Ce que vous manipulez}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Docker Compose} : décrit les services (\texttt{ldap}, réplicas, méta, Keycloak), les ports publiés sur l'hôte et les variables d'environnement. Fichier complet : annexe~\ref{ann:compose}.
+  \item \textbf{Image LDAP} : construction via \texttt{Dockerfile} et démarrage via \texttt{entrypoint.sh} (annexes \ref{ann:dockerfile} et~\ref{ann:entrypoint}) : paquets OpenLDAP, scripts copiés dans \texttt{/container/init.d/}, exécution dans un ordre fixe puis fichier sentinelle \texttt{/container/.ldap-init-complete} pour les \texttt{healthcheck}.
+\end{itemize}
+
+\section{Logiciels}
+
+\begin{itemize}[leftmargin=*]
+  \item Docker et plugin \bash{docker compose} ;
+  \item sur l'hôte : \texttt{ldap-utils} (Debian/Ubuntu) ou clients LDAP équivalents ;
+  \item pour Keycloak en ligne de commande : \bash{curl}, \bash{python3}.
+\end{itemize}
+
+\section{Ports par défaut}
+
+\texttt{389}, \texttt{1389}, \texttt{2389}, \texttt{3389}, \texttt{8090}, \texttt{9001}. En cas de conflit, changez les ports dans \texttt{docker-compose.yml} (annexe~\ref{ann:compose}).
+
+\section{Identifiants de démonstration}
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Usage} & \textbf{Valeur} \\
+\midrule
+RootDN annuaires \texttt{example} / \texttt{acme} & \texttt{cn=admin,<suffixe>} / \texttt{admin} \\
+Méta-annuaire & \texttt{cn=admin,o=federation} / \texttt{admin} \\
+Utilisateur & \texttt{uid=thomas} / \texttt{thomas123} \\
+Utilisateur & \texttt{uid=john} / \texttt{john123} \\
+Admin Keycloak & \texttt{admin} / \texttt{admin} \\
+\bottomrule
+\end{tabular}
+
+\section{Démarrage de la stack}
+
+\textbf{Prérequis :} avoir recréé l'arborescence du projet ou cloné le dépôt ; le répertoire de travail pour la commande ci-dessous est celui qui contient \texttt{docker-compose.yml} (annexe~\ref{ann:compose}).
+
+\begin{lstlisting}[style=bashstyle]
+cd chemin/vers/TP-LDAP/projet
+docker compose up -d --build
+docker compose ps
+\end{lstlisting}
+
+\section{Contrôle rapide}
+
+\begin{lstlisting}[style=bashstyle]
+docker ps --format '{{.Names}}' | grep -qx ldap && echo "conteneur ldap OK"
+ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=org -s base dn
+ldapwhoami -x -D cn=admin,dc=example,dc=org -w admin
+\end{lstlisting}
+
+\textbf{Résultat attendu :} \texttt{conteneur ldap OK} ; \texttt{ldapsearch} montre \texttt{dn: dc=example,dc=org} ; \texttt{ldapwhoami} montre le RootDN. Si besoin, attendre que \bash{docker compose ps} affiche \texttt{healthy} pour \texttt{ldap}.
+
+%======================================================================
+\chapter{Initialisation OpenLDAP : fichiers LDIF et commandes (pas à pas)}\label{chap:init-ldif}
+
+\section{Objectif de ce chapitre}
+
+Obtenir un annuaire \textbf{\texttt{dc=example,dc=org}} avec racine, unités \texttt{ou=people} / \texttt{ou=groups}, utilisateurs de démo, groupes et \textbf{ACL} alignées sur le modèle du TP - en rejouant les opérations \textbf{à la main} (fichiers LDIF + commandes). Cela correspond à ce que fait le script \texttt{init\_ldap.sh} dans l'image (annexe~\ref{ann:init-ldap}) au premier démarrage du conteneur \texttt{ldap}.
+
+\section{Deux espaces de configuration}
+
+\textbf{\texttt{cn=config}} : base de configuration OpenLDAP (définition des bases MDB, modules, ACL \texttt{olcAccess}). Les modifications passent par le mécanisme \textbf{SASL EXTERNAL} sur le socket \textbf{ldapi} depuis le conteneur (\texttt{docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// \dots}) : pas de mot de passe RootDN, il faut être root local au sens du conteneur.
+
+\textbf{Suffixe métier} (\texttt{dc=example,dc=org}) : les données « métier » (personnes, groupes). Ici on utilise une \textbf{liaison simple} (\texttt{-x}) avec le RootDN défini dans \texttt{cn=config}, en ciblant \texttt{ldap://localhost:389} depuis l'hôte (port publié par Docker).
+
+On prépare des \textbf{fichiers LDIF}, puis \texttt{ldapadd} / \texttt{ldapmodify} les appliquent.
+
+\begin{nota}
+Si une entrée existe déjà, OpenLDAP renvoie \emph{already exists} : c'est normal. Base vide : \bash{docker compose down -v} puis \bash{up -d --build}. Après avoir retiré une MDB dans \texttt{cn=config}, pensez à vider \texttt{/var/lib/ldap} et à redémarrer \texttt{slapd}.
+\end{nota}
+
+\section{Déroulé résumé (avant le détail pas à pas)}
+
+\begin{enumerate}[leftmargin=*]
+  \item Lire \texttt{cn=config} et repérer les MDB (étape~1).
+  \item (Optionnel) Activer les logs ACL (étape~2).
+  \item Supprimer la MDB par défaut ; en manuel purger \texttt{/var/lib/ldap} et relancer \texttt{slapd} si besoin (étape~3).
+  \item Créer la MDB pour \texttt{dc=example,dc=org} avec hash du mot de passe admin (étape~4).
+  \item Vérifier que les données du suffixe sont encore absentes (étape~5).
+  \item Peupler le DIT et corriger les membres des groupes (étapes~6--7).
+  \item Poser les \texttt{olcAccess} en deux temps (étape~8).
+\end{enumerate}
+
+\section{Étape 1 - Explorer \texttt{cn=config}}
+
+\texttt{cn=config} est la config du serveur. \texttt{-Y EXTERNAL -H ldapi:///} = auth locale (root sur la machine), sans mot de passe. La première commande lit la racine \texttt{cn=config} ; la seconde liste les bases MDB (\texttt{olcSuffix}, \texttt{olcRootDN}).
+
+\begin{lstlisting}[style=bashstyle]
+# Meme idee que : ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config"
+docker exec ldap ldapsearch -Y EXTERNAL -H ldapi:/// -b cn=config -s base dn
+docker exec ldap ldapsearch -Y EXTERNAL -H ldapi:/// \
+  -b cn=config -s sub "(olcDatabase=mdb)" dn olcSuffix olcRootDN
+\end{lstlisting}
+
+\section{Étape 2 - (Optionnel) Niveau de trace sur les ACL}
+
+Le fichier modifie l'entrée \texttt{cn=config} pour fixer \texttt{olcLogLevel} à \texttt{acl}. OpenLDAP journalise alors les décisions d'accès (qui a été autorisé ou refusé, sur quelle règle), ce qui aide à déboguer des problèmes d'\texttt{olcAccess}. Le \texttt{replace} remplace entièrement la valeur précédente du niveau de log pour cet attribut.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/log_acl.ldif <<'EOF'
+dn: cn=config
+changetype: modify
+replace: olcLogLevel
+olcLogLevel: acl
+EOF
+docker cp /tmp/log_acl.ldif ldap:/tmp/log_acl.ldif
+docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/log_acl.ldif
+# Puis sur l'hote : docker logs -f ldap   (ou journalctl -u slapd sur Debian nue)
+\end{lstlisting}
+
+Pour revenir au calme : remplacer \texttt{olcLogLevel: acl} par \texttt{none} dans le même LDIF (\texttt{replace}).
+
+\section{Étape 3 - Retirer la base MDB par défaut (\texttt{del\_db.ldif})}
+
+L'installation par défaut crée souvent une base \texttt{mdb} numérotée \texttt{\{1\}} avec un suffixe générique (\texttt{dc=nodomain}, etc.). Ce LDIF \textbf{supprime} cette entrée de configuration : on ne supprime pas encore les fichiers sur disque, mais on retire la base telle qu'OpenLDAP la connaît dans \texttt{cn=config}. C'est la même idée que « retirer l'ancien contexte » avant d'en déclarer un nouveau. Le numéro \texttt{\{1\}} est l'index interne de la première base MDB ; il peut varier si d'autres bases ont été ajoutées (vérifier à l'étape~1).
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/del_db.ldif <<'EOF'
+dn: olcDatabase=\{1\}mdb,cn=config
+changetype: delete
+EOF
+docker cp /tmp/del_db.ldif ldap:/tmp/del_db.ldif
+docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/del_db.ldif
+\end{lstlisting}
+
+En manuel, après cette étape : vider \texttt{/var/lib/ldap} et relancer \texttt{slapd} si le suffixe sur disque ne correspond plus à la config.
+
+\section{Étape 4 - Créer la MDB cible (\texttt{add\_suffix.ldif})}
+
+On \textbf{ajoute} une entrée \texttt{olcDatabase=mdb,cn=config} (souvent numérotée \texttt{\{1\}}). Champs utiles : \texttt{olcSuffix}, \texttt{olcRootDN}, \texttt{olcRootPW}, \texttt{olcDbDirectory}, \texttt{olcDbIndex}. Ici : \texttt{ldapadd} car nouvelle entrée dans \texttt{cn=config}.
+
+Générer le hash du mot de passe administrateur (ex.\ \texttt{admin}) :
+
+\begin{lstlisting}[style=bashstyle]
+docker exec ldap slappasswd -s admin
+\end{lstlisting}
+
+Coller la valeur \texttt{\{SSHA\}...} à la place de \texttt{ADMIN\_HASH} ci-dessous.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/add_suffix.ldif <<'EOF'
+dn: olcDatabase=mdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMdbConfig
+olcDatabase: mdb
+olcSuffix: dc=example,dc=org
+olcRootDN: cn=admin,dc=example,dc=org
+olcRootPW: ADMIN_HASH
+olcDbDirectory: /var/lib/ldap
+olcDbIndex: objectClass eq
+olcDbIndex: cn,sn,uid eq
+olcDbMaxSize: 1073741824
+EOF
+docker cp /tmp/add_suffix.ldif ldap:/tmp/add_suffix.ldif
+docker exec ldap ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/add_suffix.ldif
+\end{lstlisting}
+
+\section{Étape 5 - Constat : le suffixe existe dans \texttt{cn=config}, pas encore dans les données}
+
+Recherche sur le \textbf{DIT données} (pas \texttt{cn=config}) : sans racine \texttt{dc=example,dc=org}, réponse \texttt{No such object} (normal tant que rien n'a été ajouté avec \texttt{ldapadd}).
+
+\begin{lstlisting}[style=bashstyle]
+docker exec ldap ldapsearch -Y EXTERNAL -H ldapi:/// -b "dc=example,dc=org" -s base dn
+\end{lstlisting}
+
+\textbf{Résultat attendu :} \texttt{result: 32 No such object}.
+
+\section{Étape 6 - Peupler : racine, OU, groupes, utilisateurs (\texttt{fill\_db.ldif})}
+
+Un seul LDIF : racine, \texttt{ou=people}, \texttt{ou=groups}, trois \texttt{groupOfNames} avec membre factice \texttt{cn=dummy} (retiré à l'étape~7), deux \texttt{inetOrgPerson} avec mots de passe \textbf{hashés}. \texttt{ldapadd -x} avec le RootDN (étape~4) vers \texttt{localhost:389}.
+
+Hashes pour \texttt{THOMAS\_HASH} / \texttt{JOHN\_HASH} :
+
+\begin{lstlisting}[style=bashstyle]
+docker exec ldap slappasswd -s thomas123
+docker exec ldap slappasswd -s john123
+\end{lstlisting}
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/fill_db.ldif <<'EOF'
+dn: dc=example,dc=org
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: Example Org
+dc: example
+
+dn: ou=people,dc=example,dc=org
+objectClass: top
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=example,dc=org
+objectClass: top
+objectClass: organizationalUnit
+ou: groups
+
+dn: cn=admin_ldap,ou=groups,dc=example,dc=org
+objectClass: top
+objectClass: groupOfNames
+cn: admin_ldap
+member: cn=dummy,dc=example,dc=org
+
+dn: cn=developers,ou=groups,dc=example,dc=org
+objectClass: top
+objectClass: groupOfNames
+cn: developers
+member: cn=dummy,dc=example,dc=org
+
+dn: cn=admin_keycloak,ou=groups,dc=example,dc=org
+objectClass: top
+objectClass: groupOfNames
+cn: admin_keycloak
+member: cn=dummy,dc=example,dc=org
+
+dn: uid=thomas,ou=people,dc=example,dc=org
+objectClass: top
+objectClass: inetOrgPerson
+cn: Thomas
+sn: Thomas
+uid: thomas
+mail: thomas@example.org
+userPassword: THOMAS_HASH
+
+dn: uid=john,ou=people,dc=example,dc=org
+objectClass: top
+objectClass: inetOrgPerson
+cn: John
+sn: John
+uid: john
+mail: john@example.org
+userPassword: JOHN_HASH
+EOF
+ldapadd -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin -f /tmp/fill_db.ldif
+\end{lstlisting}
+
+\begin{nota}
+Avant \texttt{docker cp} / \texttt{ldapadd}, ouvrir \texttt{/tmp/add\_suffix.ldif} et \texttt{/tmp/fill\_db.ldif} dans un éditeur pour remplacer \texttt{ADMIN\_HASH}, \texttt{THOMAS\_HASH} et \texttt{JOHN\_HASH} par les sorties de \texttt{slappasswd}.
+\end{nota}
+
+\section{Étape 7 - Remplacer les membres factices des groupes}
+
+Trois modifications sur les groupes : \texttt{delete: member} (dummy) puis \texttt{add: member} (vrai utilisateur), séparées par \texttt{-} dans le même bloc \texttt{modify}.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/group_members.ldif <<'EOF'
+dn: cn=admin_ldap,ou=groups,dc=example,dc=org
+changetype: modify
+delete: member
+member: cn=dummy,dc=example,dc=org
+-
+add: member
+member: uid=thomas,ou=people,dc=example,dc=org
+
+dn: cn=developers,ou=groups,dc=example,dc=org
+changetype: modify
+delete: member
+member: cn=dummy,dc=example,dc=org
+-
+add: member
+member: uid=john,ou=people,dc=example,dc=org
+
+dn: cn=admin_keycloak,ou=groups,dc=example,dc=org
+changetype: modify
+delete: member
+member: cn=dummy,dc=example,dc=org
+-
+add: member
+member: uid=thomas,ou=people,dc=example,dc=org
+EOF
+ldapmodify -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin -f /tmp/group_members.ldif
+\end{lstlisting}
+
+\section{Étape 8 - ACL sur \texttt{olcDatabase=\{1\}mdb,cn=config}}
+
+Les ACL sont des lignes \texttt{olcAccess} sur l'entrée de la MDB dans \texttt{cn=config}. Syntaxe : \texttt{to \dots\ by \dots\ read|write|manage|auth|none}. L'\textbf{ordre} des règles compte : la première qui correspond s'applique.
+
+Deux fichiers : d'abord une règle large (RootDN \texttt{manage}, autres \texttt{read}), puis trois règles (mots de passe ; racine vide du DIT en lecture ; délégation au groupe \texttt{admin\_ldap} et lecture pour les utilisateurs authentifiés).
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/acl_base.ldif <<'EOF'
+dn: olcDatabase=\{1\}mdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: to * by dn.exact=cn=admin,dc=example,dc=org manage by * read
+EOF
+docker cp /tmp/acl_base.ldif ldap:/tmp/acl_base.ldif
+docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/acl_base.ldif
+
+cat > /tmp/acl_deleg.ldif <<'EOF'
+dn: olcDatabase=\{1\}mdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: to attrs=userPassword by group.exact=cn=admin_ldap,ou=groups,dc=example,dc=org write by self write by anonymous auth by * none
+olcAccess: to dn.base="" by * read
+olcAccess: to * by group.exact=cn=admin_ldap,ou=groups,dc=example,dc=org manage by self write by users read by * none
+EOF
+docker cp /tmp/acl_deleg.ldif ldap:/tmp/acl_deleg.ldif
+docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/acl_deleg.ldif
+\end{lstlisting}
+
+\begin{nota}
+Pour voir l'ordre réel des règles : \bash{docker exec ldap ldapsearch -Y EXTERNAL -H ldapi:/// -b olcDatabase=\{1\}mdb,cn=config -s base olcAccess}.
+\end{nota}
+
+\section{Contrôles finaux sur le DIT}
+
+Vérifier les personnes sous \texttt{ou=people}, le mail de \texttt{thomas}, et les \texttt{member} du groupe \texttt{admin\_ldap}.
+
+\begin{lstlisting}[style=bashstyle]
+ldapsearch -x -H ldap://localhost:389 -b ou=people,dc=example,dc=org -s one dn
+ldapsearch -x -H ldap://localhost:389 -b ou=people,dc=example,dc=org "(uid=thomas)" dn mail
+ldapsearch -x -H ldap://localhost:389 -b ou=groups,dc=example,dc=org "(cn=admin_ldap)" member
+\end{lstlisting}
+
+%======================================================================
+\chapter{Rôles fonctionnels et validation des ACL}
+
+\section{Objectif de ce chapitre}
+
+Montrer \textbf{à l'usage} ce que font les ACL posées à l'étape~8 du chapitre~\ref{chap:init-ldif} : qui peut créer ou modifier des entrées, qui ne peut pas, et comment vérifier les liaisons et les appartenances aux groupes.
+
+\section{Idée des règles du lab}
+
+Le RootDN \texttt{cn=admin,\dots} reste un compte de secours avec tous les droits sur les données. Le groupe \texttt{admin\_ldap} reçoit une \textbf{délégation} : ses membres peuvent gérer le contenu du suffixe selon les \texttt{olcAccess} (gestion des comptes, etc.). Les utilisateurs standards ont surtout le droit de lire et de modifier leur propre entrée ; le mot de passe est traité par des règles dédiées (\texttt{userPassword}, \texttt{auth} pour les liaisons).
+
+\section{Rôles retenus}
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Groupe} & \textbf{Rôle opérationnel} \\
+\midrule
+\texttt{admin\_ldap} & Administration déléguée du suffixe (hors usage courant du seul RootDN) \\
+\texttt{developers} & Groupe fonctionnel exemple \\
+\texttt{admin\_keycloak} & Gestion procédurale Keycloak côté organisation \\
+\bottomrule
+\end{tabular}
+
+Le RootDN \texttt{cn=admin,\dots} reste le filet de secours serveur ; la délégation opérationnelle passe par \texttt{admin\_ldap} (voir étape~8 du chapitre~\ref{chap:init-ldif}).
+
+\section{Test : droits contrastés (comportement attendu)}
+
+On tente d'ajouter un utilisateur \texttt{testacl} avec le \textbf{même} fichier LDIF : d'abord bind \texttt{john} (pas dans \texttt{admin\_ldap}) - échec ; puis bind \texttt{thomas} - succès ; enfin suppression par \texttt{thomas}. Le \texttt{|| true} évite d'arrêter le script sur l'échec voulu de la première commande.
+
+\begin{lstlisting}[style=bashstyle]
+docker exec ldap slappasswd -s testpass123
+cat > /tmp/user-testacl.ldif <<'EOF'
+dn: uid=testacl,ou=people,dc=example,dc=org
+objectClass: top
+objectClass: inetOrgPerson
+cn: Test
+sn: ACL
+uid: testacl
+userPassword: REMPLACER_PAR_HASH_SSHA
+EOF
+# Echec attendu (john)
+ldapadd -x -H ldap://localhost:389 \
+  -D uid=john,ou=people,dc=example,dc=org -w john123 -f /tmp/user-testacl.ldif || true
+# Succes attendu (thomas)
+ldapadd -x -H ldap://localhost:389 \
+  -D uid=thomas,ou=people,dc=example,dc=org -w thomas123 -f /tmp/user-testacl.ldif
+ldapdelete -x -H ldap://localhost:389 \
+  -D uid=thomas,ou=people,dc=example,dc=org -w thomas123 uid=testacl,ou=people,dc=example,dc=org
+\end{lstlisting}
+
+\section{Fiche de test - authentification et appartenance}
+
+\textbf{Résultats à interpréter :} \texttt{ldapwhoami} doit renvoyer le DN pour chaque compte si le mot de passe est bon. Les recherches sur \texttt{admin\_ldap} et \texttt{developers} affichent les \texttt{member} (DN) tant que les groupes sont en \texttt{groupOfNames}. Les deux dernières commandes vérifient qu'un utilisateur authentifié peut lire la base du suffixe (\texttt{-s base}), cohérent avec \texttt{by users read} dans les ACL.
+
+\begin{lstlisting}[style=bashstyle]
+ldapwhoami -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin
+ldapwhoami -x -H ldap://localhost:389 -D uid=thomas,ou=people,dc=example,dc=org -w thomas123
+ldapwhoami -x -H ldap://localhost:389 -D uid=john,ou=people,dc=example,dc=org -w john123
+ldapsearch -x -H ldap://localhost:389 -b ou=groups,dc=example,dc=org "(cn=admin_ldap)" member memberUid
+ldapsearch -x -H ldap://localhost:389 -b ou=groups,dc=example,dc=org "(cn=developers)" member memberUid
+ldapsearch -x -H ldap://localhost:389 -D uid=thomas,ou=people,dc=example,dc=org -w thomas123 \
+  -b dc=example,dc=org -s base dn
+ldapsearch -x -H ldap://localhost:389 -D uid=john,ou=people,dc=example,dc=org -w john123 \
+  -b dc=example,dc=org -s base dn
+\end{lstlisting}
+
+%======================================================================
+\chapter{Intégration Linux : attributs POSIX, NSS et PAM}
+
+\section{Objectif de ce chapitre}
+
+Que le conteneur \texttt{ldap} se comporte comme une machine Linux qui \textbf{résout} les utilisateurs/groupes via l'annuaire (\texttt{getent}, \texttt{id}) et peut ouvrir une session (\texttt{su}) avec mot de passe LDAP. Même logique que le script \texttt{init\_ldap\_linux\_integration.sh} (annexe~\ref{ann:init-linux}), exécuté sur le fournisseur après \texttt{init\_ldap.sh}.
+
+\section{NSS, PAM et nslcd en bref}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{NSS} (\texttt{nsswitch.conf}) : indique où la libc cherche passwd/group/shadow (fichiers locaux puis LDAP).
+  \item \textbf{nslcd} : démon qui répond aux requêtes NSS en interrogeant LDAP selon \texttt{/etc/nslcd.conf} (URI, base, filtres sur \texttt{posixAccount} / \texttt{posixGroup}).
+  \item \textbf{PAM} : chaînes \texttt{common-auth}, \texttt{common-account}, etc., avec \texttt{pam\_ldap.so} pour accepter une auth contre LDAP ; \texttt{pam\_mkhomedir} crée le home à la première session.
+\end{itemize}
+
+Les entrées \texttt{inetOrgPerson} du DIT ne suffisent pas : il faut ajouter les classes \textbf{POSIX} (UID, GID, shell, home) et des groupes \textbf{posixGroup} avec \texttt{memberUid}, ce qui implique souvent de remplacer les anciens \texttt{groupOfNames}.
+
+\section{Déroulé des opérations}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{LDIF utilisateurs} : ajouter \texttt{posixAccount} / \texttt{shadowAccount} et les attributs numériques (section suivante).
+  \item \textbf{LDIF groupes} : supprimer si besoin les \texttt{groupOfNames}, recréer des \texttt{posixGroup} avec \texttt{memberUid}.
+  \item \textbf{Fichiers système} : \texttt{nsswitch.conf}, \texttt{ldap.conf}, \texttt{nslcd.conf}, \texttt{/etc/ldap.conf} (PAM), puis les quatre \texttt{/etc/pam.d/common-*}.
+  \item \textbf{Redémarrage} : \texttt{nslcd}, \texttt{nscd}, invalidation du cache.
+  \item \textbf{Tests} : \texttt{getent}, puis \texttt{su}.
+\end{enumerate}
+
+\section{LDIF : attributs POSIX sur les utilisateurs}
+
+Chaque bloc \texttt{changetype: modify} regroupe plusieurs \texttt{add:} sur \textbf{une} entrée (séparés par \texttt{-}) : une seule modification atomique par utilisateur.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/posix_users.ldif <<'EOF'
+dn: uid=thomas,ou=people,dc=example,dc=org
+changetype: modify
+add: objectClass
+objectClass: posixAccount
+objectClass: shadowAccount
+-
+add: uidNumber
+uidNumber: 1001
+-
+add: gidNumber
+gidNumber: 1001
+-
+add: homeDirectory
+homeDirectory: /home/thomas
+-
+add: loginShell
+loginShell: /bin/bash
+-
+add: gecos
+gecos: Thomas Thomas
+
+dn: uid=john,ou=people,dc=example,dc=org
+changetype: modify
+add: objectClass
+objectClass: posixAccount
+objectClass: shadowAccount
+-
+add: uidNumber
+uidNumber: 1002
+-
+add: gidNumber
+gidNumber: 1002
+-
+add: homeDirectory
+homeDirectory: /home/john
+-
+add: loginShell
+loginShell: /bin/bash
+-
+add: gecos
+gecos: John John
+EOF
+ldapmodify -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin -f /tmp/posix_users.ldif
+\end{lstlisting}
+
+\section{LDIF : groupes \texttt{posixGroup}}
+
+NSS attend des groupes avec un \texttt{gidNumber} numérique et des \texttt{memberUid} (login Unix), pas des \texttt{member} en DN complets comme \texttt{groupOfNames}. On supprime donc souvent les anciennes entrées \texttt{groupOfNames} puis on recrée des \texttt{posixGroup} avec les mêmes noms logiques (\texttt{cn=admin\_ldap}, etc.).
+
+Après suppression des entrées \texttt{groupOfNames} existantes si besoin (\texttt{ldapdelete}), recréer :
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/posix_groups.ldif <<'EOF'
+dn: cn=admin_ldap,ou=groups,dc=example,dc=org
+objectClass: top
+objectClass: posixGroup
+cn: admin_ldap
+gidNumber: 1001
+memberUid: thomas
+
+dn: cn=developers,ou=groups,dc=example,dc=org
+objectClass: top
+objectClass: posixGroup
+cn: developers
+gidNumber: 1002
+memberUid: john
+EOF
+ldapadd -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin -f /tmp/posix_groups.ldif
+\end{lstlisting}
+
+\section{Fichiers NSS, nslcd et PAM dans le conteneur \texttt{ldap}}
+
+\texttt{nsswitch.conf} : fichiers puis LDAP. \texttt{nslcd.conf} : URI, base, bind admin, filtres POSIX. PAM : \texttt{pam\_ldap.so} dans les \texttt{common-*}. Puis redémarrer \texttt{nslcd} et vider le cache \texttt{nscd} si besoin.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/nsswitch.conf <<'EOF'
+passwd:         files ldap
+group:          files ldap
+shadow:         files ldap
+gshadow:        files
+hosts:          files dns
+networks:       files
+protocols:      db files
+services:       db files
+ethers:         db files
+rpc:            db files
+netgroup:       ldap
+EOF
+docker cp /tmp/nsswitch.conf ldap:/etc/nsswitch.conf
+
+cat > /tmp/ldap_ldap.conf <<'EOF'
+BASE dc=example,dc=org
+URI ldap://localhost:389
+TLS_REQCERT never
+EOF
+docker cp /tmp/ldap_ldap.conf ldap:/etc/ldap/ldap.conf
+
+cat > /tmp/nslcd.conf <<'EOF'
+uri ldap://localhost:389
+base dc=example,dc=org
+ldap_version 3
+binddn cn=admin,dc=example,dc=org
+bindpw admin
+filter passwd (objectClass=posixAccount)
+filter group (objectClass=posixGroup)
+filter shadow (objectClass=shadowAccount)
+map passwd homeDirectory homeDirectory
+map passwd uidNumber uidNumber
+map passwd gidNumber gidNumber
+map passwd loginShell loginShell
+map passwd gecos gecos
+map group gidNumber gidNumber
+map group memberUid memberUid
+EOF
+docker cp /tmp/nslcd.conf ldap:/etc/nslcd.conf
+docker exec ldap chmod 600 /etc/nslcd.conf
+
+cat > /tmp/ldap.conf <<'EOF'
+base dc=example,dc=org
+uri ldap://localhost:389
+ldap_version 3
+rootbinddn cn=admin,dc=example,dc=org
+binddn cn=admin,dc=example,dc=org
+bindpw admin
+pam_password crypt
+nss_base_passwd ou=people,dc=example,dc=org
+nss_base_shadow ou=people,dc=example,dc=org
+nss_base_group ou=groups,dc=example,dc=org
+pam_login_attribute uid
+pam_member_attribute member
+pam_filter objectclass=inetOrgPerson
+EOF
+docker cp /tmp/ldap.conf ldap:/etc/ldap.conf
+
+cat > /tmp/common-auth <<'EOF'
+auth    sufficient      pam_ldap.so
+auth    sufficient      pam_unix.so nullok_secure use_first_pass
+auth    required        pam_deny.so
+EOF
+docker cp /tmp/common-auth ldap:/etc/pam.d/common-auth
+
+cat > /tmp/common-account <<'EOF'
+account sufficient      pam_ldap.so
+account sufficient      pam_unix.so
+account required        pam_deny.so
+EOF
+docker cp /tmp/common-account ldap:/etc/pam.d/common-account
+
+cat > /tmp/common-password <<'EOF'
+password        sufficient      pam_ldap.so
+password        sufficient      pam_unix.so nullok obscure min=4 max=8 md5
+password        required        pam_deny.so
+EOF
+docker cp /tmp/common-password ldap:/etc/pam.d/common-password
+
+cat > /tmp/common-session <<'EOF'
+session required        pam_mkhomedir.so skel=/etc/skel umask=0022
+session sufficient      pam_ldap.so
+session sufficient      pam_unix.so
+session required        pam_deny.so
+EOF
+docker cp /tmp/common-session ldap:/etc/pam.d/common-session
+
+docker exec ldap service nslcd restart || docker exec ldap service nslcd start
+docker exec ldap service nscd restart || docker exec ldap service nscd start
+docker exec ldap nscd -i passwd 2>/dev/null || true
+docker exec ldap nscd -i group 2>/dev/null || true
+\end{lstlisting}
+
+\section{Fiche de test - NSS dans le conteneur \texttt{ldap}}
+
+\begin{lstlisting}[style=bashstyle]
+docker exec ldap getent passwd thomas
+docker exec ldap getent passwd john
+docker exec ldap getent group admin_ldap
+docker exec ldap getent group developers
+\end{lstlisting}
+
+\textbf{Résultat attendu :} lignes \texttt{passwd} et \texttt{group} contenant les UID/GID définis dans le LDIF.
+
+\section{Authentification (\texttt{su})}
+
+\begin{lstlisting}[style=bashstyle]
+docker exec -it ldap su - thomas -c 'id'
+\end{lstlisting}
+
+\textbf{Résultat attendu :} sortie du type \texttt{uid=1001(thomas) gid=1001(thomas) groups=1001(thomas)} (les numéros correspondent au LDIF POSIX).
+
+La création du répertoire personnel dépend de \texttt{pam\_mkhomedir.so} dans \texttt{common-session} (bloc ci-dessus).
+
+%======================================================================
+\chapter{Keycloak : fédération LDAP}
+
+\section{À quoi sert Keycloak ici ?}
+
+\textbf{Keycloak} est un serveur d'identité (gestion des comptes et des protocoles du type OpenID Connect / OAuth2). Dans ce TP il ne remplace pas LDAP : il sert de \textbf{point d'entrée} pour des applications qui parleraient à Keycloak, pendant que les comptes « source » restent dans OpenLDAP.
+
+Un \textbf{realm} est un espace isolé (utilisateurs, clients, paramètres). Le realm \textbf{master} est celui de l'administration Keycloak. Le realm applicatif du lab est \textbf{\texttt{tp-ldap}} : c'est là que nous branchons LDAP.
+
+\section{User Federation LDAP}
+
+La \textbf{fédération utilisateur} (User Federation) indique à Keycloak comment joindre l'annuaire : URL, bind, base des utilisateurs, attribut de login (\texttt{uid}), etc. Keycloak importe alors une \textbf{copie de travail} des utilisateurs (attributs utiles au login). Ici le mode est \texttt{READ\_ONLY} : le mot de passe reste contrôlé côté LDAP. L'appel \textbf{\texttt{triggerFullSync}} demande une synchronisation complète après création du connecteur.
+
+\section{Console, ports et réseau}
+
+\begin{itemize}[leftmargin=*]
+  \item Console d'administration : \url{http://localhost:8090/admin/} - compte bootstrap \texttt{admin}/\texttt{admin} (défini dans le compose, annexe~\ref{ann:compose}).
+  \item Depuis le \textbf{conteneur} Keycloak, l'hôte \texttt{localhost} n'est pas votre PC : le service LDAP s'appelle \texttt{ldap} sur le réseau Docker, d'où l'URI \texttt{ldap://ldap:389} dans la configuration.
+\end{itemize}
+
+\section{Paramètres LDAP du lab}
+
+Ces valeurs sont celles injectées dans le JSON du fournisseur (voir annexe~\ref{ann:keycloak-sh}) :
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Champ (Keycloak)} & \textbf{Valeur} \\
+\midrule
+Connection URL & \texttt{ldap://ldap:389} \\
+Users DN & \texttt{ou=people,dc=example,dc=org} \\
+Bind DN & \texttt{cn=admin,dc=example,dc=org} \\
+Bind credential & mot de passe RootDN LDAP (\texttt{admin} au lab) \\
+Username LDAP attribute & \texttt{uid} \\
+UUID LDAP attribute & \texttt{entryUUID} \\
+User object classes & \texttt{inetOrgPerson}, \texttt{organizationalPerson} \\
+\bottomrule
+\end{tabular}
+
+\section{Variables d'environnement du script (annexe~\ref{ann:keycloak-sh})}
+
+Le script lit des variables optionnelles (surcharge des défauts) :
+
+\begin{tabular}{@{}lp{0.62\linewidth}@{}}
+\toprule
+\textbf{Variable} & \textbf{Rôle (défaut)} \\
+\midrule
+\texttt{KEYCLOAK\_URL} & URL HTTP de Keycloak (\texttt{http://localhost:8090}). \\
+\texttt{KEYCLOAK\_ADMIN} / \texttt{KEYCLOAK\_ADMIN\_PASSWORD} & Compte admin console (\texttt{admin}/\texttt{admin}). \\
+\texttt{KEYCLOAK\_REALM} & Nom du realm applicatif (\texttt{tp-ldap}). \\
+\texttt{KEYCLOAK\_LDAP\_CONNECTION} & URI vue depuis le conteneur Keycloak (\texttt{ldap://ldap:389}). \\
+\texttt{LDAP\_BIND\_DN}, \texttt{LDAP\_BIND\_PW}, \texttt{LDAP\_USERS\_DN} & Connexion lecture à l'annuaire. \\
+\bottomrule
+\end{tabular}
+
+\section{Déroulement du script (API d'administration REST)}
+
+Tout le code exécutable est dans l'annexe~\ref{ann:keycloak-sh}. Voici la logique, dans l'ordre :
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Attendre Keycloak} : requête sur \texttt{/realms/master} jusqu'à réponse OK.
+  \item \textbf{Obtenir un jeton} \texttt{access\_token} : \texttt{POST} sur \texttt{/realms/master/protocol/openid-connect/token} avec \texttt{grant\_type=password}, client \texttt{admin-cli}, identifiants admin. C'est le flux OAuth2 « mot de passe du propriétaire de la ressource », réservé en pratique aux outils d'administration.
+  \item \textbf{Créer le realm} si besoin : \texttt{GET /admin/realms/tp-ldap} ; si absent, \texttt{POST /admin/realms} avec un JSON minimal (realm activé, sans auto-inscription publique).
+  \item \textbf{Fournisseur LDAP} : \texttt{GET} des \emph{components} de type stockage utilisateur ; s'il n'existe pas de \texttt{providerId} \texttt{ldap}, récupération de l'UUID interne du realm puis \texttt{POST /admin/realms/\dots/components} avec le gros JSON de configuration (dont le tableau ci-dessus).
+  \item \textbf{Synchroniser} : \texttt{POST \dots/user-storage/\{id\}/sync?action=triggerFullSync} pour importer \texttt{thomas}, \texttt{john}, etc.
+\end{enumerate}
+
+Toutes les requêtes d'administration portent l'en-tête \texttt{Authorization: Bearer <access\_token>}.
+
+\section{Exécution : copier le script depuis l'annexe}
+
+\textbf{Choix du document :} le chapitre explique ; le \textbf{code à lancer} n'est pas dupliqué ici. Il figure en entier en \textbf{annexe~\ref{ann:keycloak-sh}} (identique à \texttt{projet/scripts/configure\_keycloak\_ldap.sh} dans le dépôt Git).
+
+\begin{enumerate}[leftmargin=*]
+  \item Recopier le listing de l'annexe dans un fichier \texttt{configure\_keycloak\_ldap.sh}, puis \bash{chmod +x configure\_keycloak\_ldap.sh}.
+  \item Avoir lancé \bash{docker compose up -d --build} et attendre que les services \texttt{ldap} et \texttt{keycloak} soient prêts.
+  \item Exécuter sur l'hôte : \bash{bash configure\_keycloak\_ldap.sh} (depuis n'importe quel répertoire ; adapter \texttt{KEYCLOAK\_URL} si le port Keycloak diffère).
+\end{enumerate}
+
+Si vous clonez le dépôt : \bash{bash projet/scripts/configure\_keycloak\_ldap.sh}.
+
+\section{Vérification - requêtes \texttt{curl} (aperçu)}
+
+Après le script, un utilisateur fédéré doit apparaître dans le realm \texttt{tp-ldap}. Exemple de contrôle (même idée que l'API utilisée par le script : token admin, puis liste filtrée) :
+
+\begin{lstlisting}[style=bashstyle]
+KEYCLOAK_URL=http://localhost:8090
+REALM=tp-ldap
+TOKEN=$(curl -s -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=admin" \
+  --data-urlencode "password=admin" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+curl -s -H "Authorization: Bearer ${TOKEN}" \
+  "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=thomas&exact=true" \
+  | python3 -m json.tool
+\end{lstlisting}
+
+\textbf{Résultat attendu :} un tableau JSON contenant \textbf{un} utilisateur \texttt{thomas}. Faire de même pour \texttt{john}. Test manuel : \url{http://localhost:8090/realms/tp-ldap/account} - connexion avec login LDAP et mot de passe du DIT (\texttt{thomas123} au lab).
+
+%======================================================================
+\chapter{Réplication : fournisseur / réplica}
+
+\section{Objectif de ce chapitre}
+
+Avoir un annuaire \textbf{maître} (écritures sur le port \texttt{389}) et un \textbf{réplica} en lecture seule (port \texttt{1389}) qui reçoit les mises à jour en continu. La configuration automatique du TP correspond aux scripts \texttt{init\_replication\_provider.sh} et \texttt{init\_replication\_consumer.sh} (annexes \ref{ann:repl-provider} et~\ref{ann:repl-consumer}).
+
+\section{Notions}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{syncprov} (fournisseur) : module + overlay qui enregistrent les changements pour les réplicas.
+  \item \textbf{syncrepl} (réplica) : le consommateur s'abonne au fournisseur (\texttt{refreshAndPersist} = flux continu après la phase initiale).
+  \item \textbf{\texttt{olcServerID}} : identifiant numérique unique par nœud (ici \texttt{1} et \texttt{2}).
+  \item \textbf{\texttt{olcReadOnly}} sur la MDB du réplica : les \emph{clients} LDAP ne peuvent pas écrire ; la réplication interne met quand même à jour la copie.
+\end{itemize}
+
+Le compose du TP relie \texttt{ldap-replica} au service \texttt{ldap} (annexe~\ref{ann:compose}). Les LDIF ci-dessous sont l'équivalent \textbf{manuel}.
+
+\section{Fournisseur : module \texttt{syncprov}, overlay, \texttt{olcServerID}, index}
+
+Sur \texttt{ldap}, après un DIT opérationnel : (1)~charger \texttt{syncprov.la}, (2)~ajouter l'overlay sur \texttt{olcDatabase=\{1\}mdb}, (3)~fixer \texttt{olcServerID: 1}, (4)~index \texttt{entryUUID}.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/repl_prov_module.ldif <<'EOF'
+dn: cn=module\{0\},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: syncprov.la
+EOF
+docker cp /tmp/repl_prov_module.ldif ldap:/tmp/repl_prov_module.ldif
+docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/repl_prov_module.ldif
+
+cat > /tmp/repl_prov_overlay.ldif <<'EOF'
+dn: olcOverlay=syncprov,olcDatabase=\{1\}mdb,cn=config
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov
+EOF
+docker cp /tmp/repl_prov_overlay.ldif ldap:/tmp/repl_prov_overlay.ldif
+docker exec ldap ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/repl_prov_overlay.ldif
+
+cat > /tmp/repl_prov_rest.ldif <<'EOF'
+dn: cn=config
+changetype: modify
+add: olcServerID
+olcServerID: 1
+
+dn: olcDatabase=\{1\}mdb,cn=config
+changetype: modify
+add: olcDbIndex
+olcDbIndex: entryUUID eq
+EOF
+docker cp /tmp/repl_prov_rest.ldif ldap:/tmp/repl_prov_rest.ldif
+docker exec ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/repl_prov_rest.ldif
+\end{lstlisting}
+
+\section{Réplica : \texttt{olcServerID}, lecture seule, \texttt{syncrepl}}
+
+\texttt{olcServerID: 2}, MDB en \texttt{ReadOnly} pour les clients, et \texttt{olcSyncrepl} vers le fournisseur (\texttt{refreshAndPersist}). Sur \texttt{ldap-replica} ; adapter URL et mot de passe si besoin.
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/repl_consumer.ldif <<'EOF'
+dn: cn=config
+changetype: modify
+add: olcServerID
+olcServerID: 2
+
+dn: olcDatabase=\{1\}mdb,cn=config
+changetype: modify
+add: olcReadOnly
+olcReadOnly: TRUE
+-
+add: olcSyncrepl
+olcSyncrepl: rid=001 provider=ldap://ldap:389 bindmethod=simple binddn="cn=admin,dc=example,dc=org" credentials=admin searchbase="dc=example,dc=org" type=refreshAndPersist retry="60 +" timeout=1 schemachecking=off scope=sub
+EOF
+docker cp /tmp/repl_consumer.ldif ldap-replica:/tmp/repl_consumer.ldif
+docker exec ldap-replica ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/repl_consumer.ldif
+\end{lstlisting}
+
+\section{Fiche de test - propagation et interdiction d'écriture}
+
+Objectifs : le réplica voit les données du fournisseur ; une modif sur \texttt{389} se retrouve sur \texttt{1389} ; une écriture sur \texttt{1389} échoue. Le test utilise une \texttt{description} temporaire (\texttt{MARKER}) puis la supprime sur le fournisseur.
+
+\begin{verbatim}
+ldapsearch -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin \
+  -b ou=people,dc=example,dc=org "(uid=thomas)" dn
+MARKER="repl-test-$(date +%s)"
+ldapmodify -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin <<EOF
+dn: uid=thomas,ou=people,dc=example,dc=org
+changetype: modify
+replace: description
+description: $MARKER
+EOF
+sleep 3
+ldapsearch -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin \
+  -b uid=thomas,ou=people,dc=example,dc=org -s base description
+ldapmodify -x -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin <<EOF || echo "echec attendu sur replica"
+dn: uid=john,ou=people,dc=example,dc=org
+changetype: modify
+replace: description
+description: should-fail
+EOF
+ldapmodify -x -H ldap://localhost:389 -D cn=admin,dc=example,dc=org -w admin <<EOF || true
+dn: uid=thomas,ou=people,dc=example,dc=org
+changetype: modify
+delete: description
+EOF
+\end{verbatim}
+
+\textbf{Résultat attendu :} la première \texttt{ldapsearch} sur le port \texttt{1389} retourne le DN de \texttt{thomas}. Après le \texttt{ldapmodify} sur \texttt{389}, la recherche sur \texttt{1389} affiche \texttt{description:} suivi de la valeur \texttt{MARKER}. Le \texttt{ldapmodify} ciblant \texttt{1389} affiche une erreur du type \emph{read-only} ou \emph{Insufficient access}. Le nettoyage sur \texttt{389} supprime l'attribut \texttt{description}.
+
+%======================================================================
+\chapter{Méta-annuaire (back-meta)}
+
+\section{Objectif de ce chapitre}
+
+Offrir \textbf{un seul point LDAP} (port \texttt{3389}, suffixe \texttt{o=federation}) derrière lequel se cachent \textbf{deux annuaires réels} déjà déployés par le compose (\texttt{ldap} et \texttt{ldap-acme}). C'est la même idée que le script \texttt{projet/scripts/init\_meta\_annuaire.sh} (annexe~\ref{ann:init-meta}), déclenché depuis \texttt{init\_ldap.sh} lorsque \texttt{LDAP\_SERVICE\_ROLE=meta}.
+
+\section{Vue d'ensemble}
+
+Deux backends réels : \texttt{dc=example,dc=org} et \texttt{dc=acme,dc=com}. Le méta-annuaire présente des \textbf{vues} \texttt{ou=example-org,o=federation} et \texttt{ou=acme-corp,o=federation} ; \textbf{\texttt{suffixmassage}} réécrit ces chemins vers les suffixes réels lors des requêtes relayées. \textbf{\texttt{olcDbIDAssertBind}} fournit à OpenLDAP un compte pour se lier à chaque annuaire cible.
+
+\section{Déroulé logique de la configuration}
+
+\begin{enumerate}[leftmargin=*]
+  \item Préparer le serveur méta comme pour un nouvel suffixe : retirer la MDB par défaut, données cohérentes sur disque, \texttt{slapd} actif.
+  \item Charger les modules \texttt{back\_ldap} et \texttt{back\_meta}.
+  \item Ajouter une base \texttt{olcDatabase=meta} (suffixe \texttt{o=federation}, RootDN admin du méta, hash mot de passe).
+  \item Créer deux entrées \texttt{olcMetaSub} : une par annuaire (URI du service Docker, \texttt{suffixmassage}, identifiants d'assertion).
+\end{enumerate}
+
+Les valeurs concrètes (URIs, DN) correspondent aux variables \texttt{LDAP\_META\_*} du compose (annexe~\ref{ann:compose}). Schéma LDIF ci-dessous :
+
+\begin{lstlisting}[style=bashstyle]
+cat > /tmp/meta_modules.ldif <<'EOF'
+dn: cn=module\{0\},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: back_ldap.la
+-
+add: olcModuleLoad
+olcModuleLoad: back_meta.la
+EOF
+
+cat > /tmp/meta_db.ldif <<'EOF'
+dn: olcDatabase=meta,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMetaConfig
+olcDatabase: meta
+olcSuffix: o=federation
+olcRootDN: cn=admin,o=federation
+olcRootPW: META_ADMIN_HASH
+olcDbOnErr: continue
+olcDbCancel: abandon
+olcDbTFSupport: no
+olcAccess: to * by dn.exact=cn=admin,o=federation manage by * read
+EOF
+
+# Remplacer META_ADMIN_HASH par : docker exec ldap-meta slappasswd -s admin
+
+cat > /tmp/meta_tgt_example.ldif <<'EOF'
+dn: olcMetaSub=\{0\}example,olcDatabase=meta,cn=config
+objectClass: olcConfig
+objectClass: olcMetaTargetConfig
+olcMetaSub: \{0\}example
+olcDbURI: ldap://ldap:389/ou=example-org,o=federation
+olcDbRewrite: \{0\}suffixmassage "ou=example-org,o=federation" "dc=example,dc=org"
+olcDbIDAssertBind: bindmethod=simple binddn="cn=admin,dc=example,dc=org" credentials=admin
+olcDbChaseReferrals: FALSE
+EOF
+
+cat > /tmp/meta_tgt_acme.ldif <<'EOF'
+dn: olcMetaSub=\{1\}acme,olcDatabase=meta,cn=config
+objectClass: olcConfig
+objectClass: olcMetaTargetConfig
+olcMetaSub: \{1\}acme
+olcDbURI: ldap://ldap-acme:389/ou=acme-corp,o=federation
+olcDbRewrite: \{0\}suffixmassage "ou=acme-corp,o=federation" "dc=acme,dc=com"
+olcDbIDAssertBind: bindmethod=simple binddn="cn=admin,dc=acme,dc=com" credentials=admin
+olcDbChaseReferrals: FALSE
+EOF
+# Puis : docker cp ... ldap-meta:/tmp/ ... et ldapmodify / ldapadd -Y EXTERNAL -H ldapi:///
+# dans l'ordre modules -> base meta -> cibles (slapd actif).
+\end{lstlisting}
+
+\begin{nota}
+Ordre et redémarrages de \texttt{slapd} sont sensibles ; ce bloc est une \textbf{référence LDIF} à appliquer avec \texttt{ldapmodify}/\texttt{ldapadd}.
+\end{nota}
+
+\section{Contrôle des contextes}
+
+\begin{lstlisting}[style=bashstyle]
+ldapsearch -x -H ldap://localhost:3389 -D cn=admin,o=federation -w admin \
+  -b "" -s base namingContexts
+\end{lstlisting}
+
+\textbf{Résultat attendu :} la réponse contient au minimum le suffixe virtuel \texttt{o=federation} (et éventuellement d'autres contextes selon la configuration affichée par le serveur).
+
+\section{Fiche de test - deux sources pour \texttt{uid=thomas}}
+
+Les deux annuaires contiennent un \texttt{uid=thomas} avec une adresse \texttt{mail} différente.
+
+\begin{lstlisting}[style=bashstyle]
+ldapsearch -x -H ldap://localhost:3389 -D cn=admin,o=federation -w admin \
+  -b ou=people,ou=example-org,o=federation -s sub "(uid=thomas)" mail
+ldapsearch -x -H ldap://localhost:3389 -D cn=admin,o=federation -w admin \
+  -b ou=people,ou=acme-corp,o=federation -s sub "(uid=thomas)" mail
+ldapsearch -x -H ldap://localhost:3389 -D cn=admin,o=federation -w admin \
+  -b o=federation -s sub "(uid=thomas)" dn
+# Compter les lignes dn: uid=thomas (attendu : 2)
+\end{lstlisting}
+
+\textbf{Résultat attendu :} \texttt{thomas@example.org} sous \texttt{example-org}, \texttt{thomas@acme.com} sous \texttt{acme-corp}.
+
+%======================================================================
+\appendix
+
+\chapter{Sources complètes du laboratoire}\label{ann:infra}
+
+Fichiers pour monter la stack du TP : compose, image Docker, point d'entrée du conteneur, puis les petits fichiers shell copiés dans l'image (build). Le guide principal décrit surtout les \textbf{commandes LDAP} à la main ; cette annexe sert à disposer d'une copie des fichiers du projet. Compiler avec \texttt{annexe-code-inclus.tex} dans le même dossier que ce \texttt{.tex}.
+
+\section{Vue d'ensemble des fichiers}
+
+\begin{tabular}{@{}p{0.34\linewidth}p{0.60\linewidth}@{}}
+\toprule
+\textbf{Fichier} & \textbf{Rôle} \\
+\midrule
+\texttt{docker-compose.yml} & Services, ports, volumes, variables. \\
+\texttt{Dockerfile} / \texttt{entrypoint.sh} & Image avec \texttt{slapd}, démarrage du conteneur. \\
+Autres fichiers \texttt{.sh} listés plus bas & Nécessaires au \texttt{docker build} tel que défini dans le \texttt{Dockerfile}. \\
+\bottomrule
+\end{tabular}
+
+\input{annexe-code-inclus.tex}
+
+\end{document}

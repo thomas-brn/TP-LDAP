@@ -146,4 +146,4 @@ if [ "$SYNC_CODE" != "204" ] && [ "$SYNC_CODE" != "200" ]; then
   echo "[configure_keycloak_ldap] AVERTISSEMENT : sync HTTP ${SYNC_CODE} (souvent acceptable si déjà synchronisé)."
 fi
 
-echo "[configure_keycloak_ldap] Terminé. Console : ${KEYCLOAK_URL}/admin/ — realm « ${REALM} »."
+echo "[configure_keycloak_ldap] Terminé. Console : ${KEYCLOAK_URL}/admin/ - realm « ${REALM} »."

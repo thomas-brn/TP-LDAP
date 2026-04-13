@@ -1,4 +1,4 @@
-# TP LDAP – OpenLDAP 2.6 sur Debian 12 (Docker)
+# TP LDAP - OpenLDAP 2.6 sur Debian 12 (Docker)
 
 ## Objectif du TP
 
@@ -23,9 +23,7 @@ Sans `ldap-utils` (ou équivalent), le démarrage Docker fonctionne encore, mais
 
 ## Démarrage rapide
 
-Les fichiers Docker et les scripts d’automatisation sont dans **`projet/`** (compose, Dockerfile, scripts d’init). Les tests restent dans **`projet/test/`** et se lancent depuis la racine du dépôt avec `./projet/test/…`.
-
-**Option A — depuis `projet/`** (recommandé) :
+Les fichiers Docker et les scripts d’automatisation sont dans **`projet/`** (compose, Dockerfile, scripts d’init). Scripts d’annuaire dans **`projet/scripts/`** : `init_ldap.sh`, `init_ldap_linux_integration.sh`, `init_replication_provider.sh`, `init_replication_consumer.sh`, `init_meta_annuaire.sh` ; sur l’hôte : `configure_keycloak_ldap.sh`. Les tests restent dans **`projet/test/`** et se lancent depuis la racine du dépôt avec `./projet/test/…`.
 
 ```bash
 cd projet
@@ -34,17 +32,10 @@ docker ps
 docker logs -f ldap
 ```
 
-**Option B — depuis la racine du dépôt** (même contexte de build : `projet/`) :
+La configuration **OpenLDAP** (DIT, ACL, utilisateurs de démo) est appliquée **dans le conteneur** au premier démarrage. **Keycloak** démarre vide : pour créer le realm `tp-ldap` et la fédération LDAP, exécuter une fois (toujours dans `projet/`, après `docker compose up`) :
 
 ```bash
-docker compose -f projet/docker-compose.yml up -d --build
-docker logs -f ldap
-```
-
-La configuration **OpenLDAP** (DIT, ACL, utilisateurs de démo) est appliquée **dans le conteneur** au premier démarrage. **Keycloak** démarre vide : pour créer le realm `tp-ldap` et la fédération LDAP, exécuter une fois (depuis la racine du dépôt) :
-
-```bash
-bash projet/scripts/configure_keycloak_ldap.sh
+bash scripts/configure_keycloak_ldap.sh
 ```
 
 (C’est aussi fait automatiquement lors de l’exécution de `./projet/test/test_05_keycloak.sh` ou de la suite complète ci-dessous.) Au premier lancement, attendre **environ 30 à 60 secondes** que Keycloak réponde sur **http://localhost:8090** avant le script ou les tests Keycloak.
@@ -55,7 +46,6 @@ bash projet/scripts/configure_keycloak_ldap.sh
 
 ```bash
 # Toute la suite (objectifs 1 à 7 ; suppose « docker compose up » déjà lancé dans projet/)
-
 ./projet/test/test_all_implemented.sh
 
 # Un seul objectif, par exemple le DIT
@@ -82,7 +72,7 @@ docker exec ldap bash -c "getent group admin_ldap"
 Après `docker compose up -d` dans `projet/` et une courte attente pour le démarrage de Keycloak :
 
 - **Configuration automatique** : `./projet/test/test_05_keycloak.sh` (ou la suite complète).
-- **Console d’administration** : [http://localhost:8090/admin/](http://localhost:8090/admin/) — compte bootstrap par défaut : `admin` / `admin` (voir `projet/docker-compose.yml`).
+- **Console d’administration** : [http://localhost:8090/admin/](http://localhost:8090/admin/) - compte bootstrap par défaut : `admin` / `admin` (voir `projet/docker-compose.yml`).
 - **Realm applicatif** : `tp-ldap` ; utilisateurs de test synchronisés depuis LDAP : **thomas** / `thomas123`, **john** / `john123`.
 
 ### Réplication (lecture seule sur le réplica)
@@ -108,7 +98,7 @@ dc=example,dc=org
 └── ou=groups,dc=example,dc=org
     ├── cn=admin_ldap (posixGroup, gidNumber: 1001)
     ├── cn=developers (posixGroup, gidNumber: 1002)
-    └── cn=admin_keycloak (groupOfNames ; thomas membre — rôle procédural Keycloak)
+    └── cn=admin_keycloak (groupOfNames ; thomas membre - rôle procédural Keycloak)
 ```
 
 ## Structure du projet

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 6 — Réplication LDAP (fournisseur RW / réplica RO)
+# Objectif 6 - Réplication LDAP (fournisseur RW / réplica RO)
 # Prérequis : « docker compose up -d » dans projet/ (ldap + ldap-replica).
 set -uo pipefail
 
@@ -101,7 +101,7 @@ delete: description
 EOF
 ldapmodify -x -H "$PROVIDER_URI" -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f "$TMPD/del-desc.ldif" >/dev/null 2>&1 || true
 
-print_objectif_summary "Objectif 6 — résumé"
+print_objectif_summary "Objectif 6 - résumé"
 
 if [ "$FAILED_TESTS" -gt 0 ]; then
   exit 1

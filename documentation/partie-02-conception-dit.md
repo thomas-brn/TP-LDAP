@@ -1,15 +1,4 @@
-# TP LDAP — Partie 2 : Conception de la structure DIT
-
-> **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 2 / 7 — *Conception de la structure DIT* (`INSTRUCTIONS.md`, même intitulé).  
-> **Prérequis** : *Partie 1 — Installation et déploiement automatisé* : conteneur `ldap` démarré, `slapd` et scripts `init.d` exécutés (notamment **`projet/scripts/init_ldap.sh`** copié en `10-init_ldap.sh`).  
-> **Convention dépôt** : suffixe piloté par **`LDAP_BASE_DN`** (ex. `dc=example,dc=org`) ; comptes exemple **`thomas`** / **`john`** sous **`ou=people`** ; groupes sous **`ou=groups`**.  
-> **Chapitre précédent** : *Partie 1 — Installation et déploiement automatisé*.  
-> **Chapitre suivant** : *Partie 3 — Discrétisation des rôles et ACL* (`documentation/partie-03-roles-acl.md`).
-
-Ce document décrit **comment l’annuaire est structuré** dans le projet : choix du suffixe (base DN), unités organisationnelles, et peuplement minimal. Il complète la section « Conception de la structure DIT » de **`INSTRUCTIONS.md`**. Logique suivie : après reconfiguration de la base MDB, le suffixe existe en configuration mais le **contenu** du DIT est créé par **LDIF** et commandes **`ldapadd`** / **`ldapmodify`**.
-
----
+# TP LDAP - Partie 2 : Conception de la structure DIT
 
 ## 1. Contexte : pourquoi le DIT n’existe pas « tout seul »
 
@@ -25,9 +14,9 @@ Les instructions demandent de **définir un base DN** (`dc=...`) adapté au cas 
 
 **Paramétrage** : les variables d’environnement suivantes pilotent la construction du DIT :
 
-- `LDAP_BASE_DN` — suffixe de l’annuaire (ex. `dc=example,dc=org` dans `projet/docker-compose.yml`) ;
-- `LDAP_ORGANISATION` — attribut `o` de l’organisation ;
-- `LDAP_DOMAIN` — sert notamment au mail et à dériver le premier segment `dc` (partie avant le premier `.` du domaine).
+- `LDAP_BASE_DN` - suffixe de l’annuaire (ex. `dc=example,dc=org` dans `projet/docker-compose.yml`) ;
+- `LDAP_ORGANISATION` - attribut `o` de l’organisation ;
+- `LDAP_DOMAIN` - sert notamment au mail et à dériver le premier segment `dc` (partie avant le premier `.` du domaine).
 
 **NOTA :** dans le script `init_ldap.sh`, des valeurs par défaut internes (`dc=polytech,dc=fr`, etc.) ne s’appliquent **que** si les variables ne sont pas définies ; avec Docker Compose, ce sont les valeurs du fichier compose qui priment.
 
@@ -37,11 +26,11 @@ Les instructions demandent de **définir un base DN** (`dc=...`) adapté au cas 
 
 Conformément aux instructions, on trouve au minimum :
 
-| Entrée | Rôle |
-|--------|------|
-| Racine `$BASE_DN` | `dcObject`, `organization`, `top` — ancrage du domaine |
-| `ou=people,$BASE_DN` | Utilisateurs (personnes) |
-| `ou=groups,$BASE_DN` | Groupes |
+| Entrée               | Rôle                                                   |
+| -------------------- | ------------------------------------------------------ |
+| Racine `$BASE_DN`    | `dcObject`, `organization`, `top` - ancrage du domaine |
+| `ou=people,$BASE_DN` | Utilisateurs (personnes)                               |
+| `ou=groups,$BASE_DN` | Groupes                                                |
 
 Le projet ajoute en outre des **comptes exemple** (`uid=thomas`, `uid=john`) et des **groupes** (`cn=admin_ldap`, `cn=developers`) pour les parties « rôles / ACL » et « intégration Linux ».
 
@@ -98,29 +87,8 @@ Un résultat **« No such object »** sur le suffixe avant peuplement est attend
 
 ---
 
-## 6. Justification de la structure (exigence du TP)
-
-**`INSTRUCTIONS.md`** demande de **justifier** la structure (besoins, évolution). Pistes de contenu, cohérentes avec ce dépôt :
+## 6. Justification de la structure
 
 - **Séparation** `people` / `groups` : habituelle, compatible clients LDAP et intégration POSIX.
 - **Suffixe** : aligné sur un domaine logique (`example.org` en démo, à remplacer par votre entité).
 - **Évolution** : possibilité d’ajouter `ou=services`, `ou=roles`, ou des sous-OU par site sans changer le suffixe.
-
----
-
-## 7. Synthèse de la partie 2
-
-| Attendu | Réalisation |
-|---------|-------------|
-| Base DN défini | Oui (env + compose) |
-| `ou=people`, `ou=groups` | Oui |
-| Données initiales via LDIF | Oui (générés dans `init_ldap.sh`) |
-| Justification écrite | À produire dans la synthèse du TP (texte séparé ou section README selon les consignes de rendu) |
-
-**Pistes de finalisation** : joindre un extrait d’export réel (`ldapsearch -LLL …`) pour audit ; ajouter des OU supplémentaires si un cahier des charges ou une extension du scénario l’exige.
-
----
-
-**Fin du chapitre 2 / 7** — La suite logique est la *Partie 3 — Discrétisation des rôles et ACL* : groupes fonctionnels, délégation et règles `olcAccess` sur la base décrite ici.
-
-*Référence : `INSTRUCTIONS.md` — section « Conception de la structure DIT ».*

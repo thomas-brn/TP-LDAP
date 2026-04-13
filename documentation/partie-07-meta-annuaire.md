@@ -1,53 +1,51 @@
-# TP LDAP — Partie 7 : Fédération LDAP (méta-annuaire)
-
-> **Usage** : ce fichier est un **chapitre autonome** du rapport (copier-coller tel quel).  
-> **Chapitre** : 7 / 7 — *Fédération LDAP (méta-annuaire)* (`INSTRUCTIONS.md`, même intitulé).  
-> **Prérequis** : *Parties 1 à 6* — maîtrise d’au moins un annuaire OpenLDAP déployé ; la **réplication** (partie 6) illustre déjà deux instances distinctes.  
-> **Convention dépôt** : **non livré** dans ce dépôt à ce stade — pas de service méta-annuaire dans **`projet/docker-compose.yml`**, pas de script `test_07_*.sh`.  
-> **Chapitre précédent** : *Partie 6 — Réplication LDAP (RW / RO)* (`documentation/partie-06-replication.md`).  
-> **Chapitre suivant** : aucun (fin de la série 1–7 alignée sur les grands objectifs de **`INSTRUCTIONS.md`**).
-
-Ce document fixe **l’état cible** et les **travaux restants** pour la section « Fédération LDAP (Méta-annuaire) » de **`INSTRUCTIONS.md`**. Il sert de trame pour le rapport ou les itérations futures du projet, sur le modèle des parties 1 à 6.
-
----
+# TP LDAP - Partie 7 : Fédération LDAP (méta-annuaire)
 
 ## 1. Ce que demandent les instructions
 
-1. **Plusieurs annuaires LDAP** distincts (simulation d’entités différentes).  
-2. Un **méta-annuaire** qui :  
-   - reconnaît les annuaires « inférieurs » ;  
-   - centralise l’accès ;  
-   - permet d’interroger **plusieurs sources**.  
-3. **Tests** : requêtes sur le méta-annuaire renvoient des données issues des différents LDAP sous-jacents.
+1. **Plusieurs annuaires LDAP** distincts (simulation d’entités différentes).
+2. Un **méta-annuaire** qui reconnaît les annuaires « inférieurs », centralise l’accès et permet d’interroger **plusieurs sources**.
+3. **Tests** : des requêtes sur le méta-annuaire renvoient des données issues des différents LDAP sous-jacents.
 
 ---
 
-## 2. État du dépôt
+## 2. État du projet (implémenté)
 
-| Élément | Statut |
-|---------|--------|
-| Plusieurs services LDAP « entités » | Non (hors combinaison fournisseur + réplica, qui n’est pas un méta-annuaire) |
-| Méta-annuaire (ex. `meta`, `back-meta`, proxy) | Non configuré |
-| Tests automatisés méta-annuaire | Absents |
+| Élément                         | Statut                                                                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Annuaire principal **`ldap`**   | `dc=example,dc=org` (port **389**) - inchangé pour les parties 1–5                                                                                                                                     |
+| Second annuaire **`ldap-acme`** | `dc=acme,dc=com` (port **2389**), même image et même logique de DIT que le premier (utilisateurs **thomas** / **john**, mots de passe de démo identiques)                                              |
+| Méta-annuaire **`ldap-meta`**   | OpenLDAP **back-meta** + **back_ldap** ; suffixe **`o=federation`** ; sous-arbres virtuels **`ou=example-org,o=federation`** → `dc=example,dc=org`, **`ou=acme-corp,o=federation`** → `dc=acme,dc=com` |
+| Tests automatisés               | `projet/test/test_07_meta_annuaire.sh` (+ entrée dans `test_all_implemented.sh`)                                                                                                                       |
 
----
-
-## 3. Pistes de mise en œuvre (hors livrable actuel)
-
-- **OpenLDAP** : backend **meta** (ou architecture **syncrepl** / **subordinate** selon objectifs pédagogiques) ; consulter l’[OpenLDAP Admin Guide](https://www.openldap.org/doc/admin26/guide.html) pour la version 2.6.  
-- **Compose** : ajouter des services `ldap-a`, `ldap-b`, puis un nœud **`ldap-meta`** avec `slapd` configuré pour agréger des `suffixmassage` / `uri` vers les backends.  
-- **Sécurité** : comptes de lecture dédiés sur chaque sous-annuaire, moindre privilège.  
-- **Validation** : script `test_07_meta_annuaire.sh` (à créer) : `ldapsearch` sur le suffixe du méta et vérification de la présence d’entrées provenant de deux arbres sources.
+**Remarque** : le binaire Debian **slapd** du conteneur est en **2.5.x** ; les concepts (meta, suffixmassage, `olcDbIDAssertBind`) correspondent à la famille OpenLDAP visée par le TP (**2.6** en cible pédagogique).
 
 ---
 
-## 4. Synthèse
+## 3. Mise en œuvre dans le dépôt
 
-| Attendu | Réalisation actuelle |
-|---------|----------------------|
-| Méta-annuaire opérationnel | À faire |
-| Tests d’agrégation | À faire |
+### 3.1. Rôle `meta` et scripts
 
-**Fin du chapitre 7 / 7** — Série des parties **1 à 7** : les parties **1 à 6** sont implémentées et documentées dans le dépôt ; la **partie 7** reste **à implémenter** pour couvrir intégralement la section correspondante de **`INSTRUCTIONS.md`**.
+- Dans **`init_ldap.sh`**, si **`LDAP_SERVICE_ROLE=meta`**, aucune base **mdb** locale ni DIT de démo n’est créé : le script délègue à **`init_meta_annuaire.sh`** puis se termine avec le code retour de ce script.
+- **`init_meta_annuaire.sh`** : supprime la mdb par défaut, charge **`back_ldap.la`** (requis par **back_meta**), charge **`back_meta.la`**, ajoute la base **`olcDatabase=meta`** avec **`olcSuffix: o=federation`**, puis deux entrées **`olcMetaTargetConfig`** avec **`olcDbURI`** pointant vers un naming context **sous** `o=federation`, **`suffixmassage`** vers le suffixe réel, et **`olcDbIDAssertBind`** (compte **`cn=admin`** de chaque annuaire, mot de passe **`LDAP_ADMIN_PASSWORD`**) pour la lecture sur les backends (les ACL des annuaires n’autorisent pas l’anonyme en lecture générale).
+- **`init_ldap_linux_integration.sh`**, **`init_replication_provider.sh`** : ignorés ou sans effet lorsque **`LDAP_SERVICE_ROLE=meta`**.
 
-*Référence : `INSTRUCTIONS.md` — section « Fédération LDAP (Méta-annuaire) ».*
+### 3.2. Docker Compose
+
+- **`ldap-acme`** : build identique à **`ldap`**, variables **`LDAP_BASE_DN=dc=acme,dc=com`**, **`LDAP_DOMAIN=acme.com`**, publication **2389:389**, dépend du **`ldap`** sain (ordonnancement pédagogique).
+- **`ldap-meta`** : **`LDAP_SERVICE_ROLE=meta`**, volumes dédiés, **3389:389**, **`depends_on`** **`ldap`** et **`ldap-acme`** en **healthy**.
+- Les URI internes utilisées par le méta sont **`ldap://ldap:389`** et **`ldap://ldap-acme:389`** (noms de services Compose).
+
+### 3.3. Vue côté client
+
+- Bind d’administration sur le méta : **`cn=admin,o=federation`** / mot de passe **`admin`** (démo).
+- Exemple : une recherche **`(uid=thomas)`** sous **`o=federation`** retourne **deux** entrées (chemins **`…ou=example-org,…`** et **`…ou=acme-corp,…`**), distinguables notamment par l’attribut **`mail`** (`thomas@example.org` vs `thomas@acme.com`).
+
+---
+
+## 4. Vérifications (check-list)
+
+```text
+[x] docker compose ps  →  ldap, ldap-acme, ldap-meta UP
+[x] ldapsearch sur le méta sous o=federation  →  deux uid=thomas (sources distinctes)
+[x] Scripts test_07_meta_annuaire.sh et suite test_all_implemented.sh
+```

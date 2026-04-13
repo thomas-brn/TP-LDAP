@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 3 — Discrétisation des rôles et ACL
+# Objectif 3 - Discrétisation des rôles et ACL
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -37,7 +37,7 @@ test_with_output "Thomas peut lire l'annuaire" \
 test_with_output "John peut lire l'annuaire" \
     "ldapsearch -x -H ldap://localhost:389 -D uid=john,ou=people,$BASE_DN -w $JOHN_PASS -b $BASE_DN -s base dn"
 
-print_objectif_summary "Objectif 3 — résumé"
+print_objectif_summary "Objectif 3 - résumé"
 
 if [ "$FAILED_TESTS" -gt 0 ]; then
     exit 1

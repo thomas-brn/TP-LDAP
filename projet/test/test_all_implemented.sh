@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-<<<<<<< HEAD
 # Lance tous les scripts de test des objectifs 1 à 7 du TP (ordre pédagogique).
-=======
-# Lance tous les scripts de test des objectifs 1 à 6 du TP (ordre pédagogique).
->>>>>>> a9ae0b6 (keycloak et replication)
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,18 +13,10 @@ TESTS=(
     "test_04_integration_linux.sh"
     "test_05_keycloak.sh"
     "test_06_replication.sh"
-<<<<<<< HEAD
     "test_07_meta_annuaire.sh"
 )
-
 echo "════════════════════════════════════════════════════════════"
-echo "🧪 Suite complète — TP LDAP (objectifs 1 à 7)"
-=======
-)
-
-echo "════════════════════════════════════════════════════════════"
-echo "🧪 Suite complète — TP LDAP (objectifs 1 à 6)"
->>>>>>> a9ae0b6 (keycloak et replication)
+echo "🧪 Suite complète - TP LDAP (objectifs 1 à 7)"
 echo "════════════════════════════════════════════════════════════"
 echo ""
 

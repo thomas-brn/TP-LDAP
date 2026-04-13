@@ -49,11 +49,11 @@ if [ "$ready" != 1 ]; then
   exit 1
 fi
 
-# Exécution des scripts d'initialisation
-# Ces scripts configurent la base de données, créent le DIT et configurent les ACL
+# Exécution des scripts d'initialisation (ordre fixe : pas de préfixe numérique sur les noms)
 if [ -d "/container/init.d" ]; then
   echo "[entrypoint] Exécution des scripts d'initialisation..."
-  for script in /container/init.d/*.sh; do
+  for name in init_ldap.sh init_ldap_linux_integration.sh init_replication_provider.sh init_replication_consumer.sh; do
+    script="/container/init.d/$name"
     [ -e "$script" ] || continue
     echo "[entrypoint] Exécution: $script"
     if bash "$script"; then
