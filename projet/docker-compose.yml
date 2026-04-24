@@ -20,7 +20,7 @@ services:
     restart: "no"
     stop_grace_period: 15s
     healthcheck:
-      # Fichier écrit après tous les scripts init.d ; puis DIT + syncprov (réplication).
+      # File created after all init.d scripts; then DIT + syncprov (replication).
       test:
         [
           "CMD-SHELL",
@@ -65,7 +65,7 @@ services:
     restart: "no"
     stop_grace_period: 15s
 
-  # Second annuaire (entité distincte) pour le méta-annuaire - même image, autre suffixe.
+  # Second directory (distinct entity) for meta-directory — same image, different suffix.
   ldap-acme:
     build:
       context: .
@@ -98,7 +98,7 @@ services:
     restart: "no"
     stop_grace_period: 15s
 
-  # Méta-annuaire (back-meta) : agrège ldap (example.org) et ldap-acme (acme.com).
+  # Meta-directory (back-meta): aggregates ldap (example.org) and ldap-acme (acme.com).
   ldap-meta:
     build:
       context: .
@@ -148,7 +148,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_MANAGEMENT_PORT: "9000"
     ports:
-      # 8090 / 9001 : éviter le conflit avec un service déjà sur 8080 (ex. autre stack).
+      # 8090 / 9001: avoid conflict with another service already using 8080.
       - "8090:8080"
       - "9001:9000"
     depends_on:

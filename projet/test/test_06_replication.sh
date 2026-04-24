@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Objectif 6 - Réplication LDAP (fournisseur RW / réplica RO)
-# Prérequis : « docker compose up -d » dans projet/ (ldap + ldap-replica).
+# Objective 6 — LDAP replication (RW provider / RO replica)
+# Prerequisite: run "docker compose up -d" in projet/ (ldap + ldap-replica).
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -67,7 +67,7 @@ test_function "Conteneur ldap-replica en cours d'exécution" \
 test_function "Fournisseur LDAP joignable sur 389" \
   "ldapsearch -x -H $PROVIDER_URI -D cn=admin,$BASE_DN -w $ADMIN_PASS -b $BASE_DN -s base dn >/dev/null 2>&1"
 
-# Avant sync, le suffixe peut être absent : on vérifie seulement que slapd répond (root DSE).
+# Before sync, suffix may be absent: only verify slapd responds (root DSE).
 test_function "Réplica LDAP répond sur 1389 (root DSE)" \
   "ldapsearch -x -H $REPLICA_URI -b '' -s base namingContexts >/dev/null 2>&1"
 
@@ -85,7 +85,7 @@ MARKER="tp-replication-$(date +%s)-$$"
 test_function "Écriture sur le fournisseur (attribut description sur thomas)" \
   "provider_set_thomas_description '$MARKER'"
 
-# La propagation peut prendre quelques secondes après l’écriture
+# Propagation can take a few seconds after write
 sleep 3
 
 test_function "Modification propagée sur le réplica (même valeur description)" \

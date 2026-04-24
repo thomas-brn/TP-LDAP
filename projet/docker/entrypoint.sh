@@ -1,35 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Script d'entrée pour le conteneur LDAP
-# Ce script démarre slapd et exécute les scripts d'initialisation
+# Entrypoint script for the LDAP container
+# This script starts slapd and runs initialization scripts
 
 echo "[entrypoint] Démarrage du conteneur LDAP..."
 
-# Les volumes Docker montés sur /var/lib/ldap et /etc/ldap/slapd.d sont vides
-# et souvent propriété de root : slapd (-u openldap) ne peut pas y accéder.
+# Docker volumes mounted on /var/lib/ldap and /etc/ldap/slapd.d are empty
+# and often owned by root: slapd (-u openldap) cannot access them.
 chown -R openldap:openldap /var/lib/ldap /etc/ldap/slapd.d
 
-# Initialisation de la configuration slapd si nécessaire
-# Cette étape crée la structure de base cn=config
+# Initialize slapd configuration if needed
+# This step creates the base cn=config structure
 if [ ! -d "/etc/ldap/slapd.d" ] || [ -z "$(ls -A /etc/ldap/slapd.d || true)" ]; then
   echo "[entrypoint] Initialisation de la configuration slapd..."
   slaptest -F /etc/ldap/slapd.d -f /dev/null >/dev/null 2>&1 || true
   chown -R openldap:openldap /etc/ldap/slapd.d
 fi
 
-# Vérifier si slapd est déjà en cours d'exécution
+# Check whether slapd is already running
 if pgrep slapd >/dev/null 2>&1; then
     echo "[entrypoint] slapd déjà en cours d'exécution"
 else
-    # Démarrage du serveur slapd en arrière-plan.
-    # slapd se daemonise (fork) : le PID du shell ($!) meurt tout de suite, on vérifie la vie du
-    # service avec pgrep slapd, pas avec kill -0 $!.
+    # Start slapd in the background.
+    # slapd daemonizes (forks): the shell PID ($!) dies immediately, so we check
+    # service liveness with pgrep slapd, not kill -0 $!.
     echo "[entrypoint] Lancement de slapd..."
     slapd -h "ldap:/// ldapi:///" -u openldap -g openldap -F /etc/ldap/slapd.d &
 fi
 
-# Attendre que slapd écoute (processus slapd + socket ldapi + LDAP TCP).
+# Wait until slapd is listening (slapd process + ldapi socket + LDAP TCP).
 echo "[entrypoint] Attente du socket ldapi et du port LDAP 389..."
 ready=0
 for i in {1..60}; do
@@ -49,7 +49,8 @@ if [ "$ready" != 1 ]; then
   exit 1
 fi
 
-# Exécution des scripts d'initialisation (ordre fixe : pas de préfixe numérique sur les noms)
+# Run initialization scripts
+# These scripts configure the database, create the DIT, and configure ACLs
 if [ -d "/container/init.d" ]; then
   echo "[entrypoint] Exécution des scripts d'initialisation..."
   for name in init_ldap.sh init_ldap_linux_integration.sh init_replication_provider.sh init_replication_consumer.sh; do
@@ -67,8 +68,8 @@ if [ -d "/container/init.d" ]; then
   touch /container/.ldap-init-complete
 fi
 
-# Arrêt propre : docker stop envoie SIGTERM à PID 1
-# Éviter « sleep infinity » en boucle : l'arrêt peut rester bloqué très longtemps en « Stopping »
+# Graceful shutdown: docker stop sends SIGTERM to PID 1
+# Avoid looped "sleep infinity": shutdown can stay stuck in "Stopping" for a long time
 _shutdown() {
   echo "[entrypoint] Arrêt demandé (SIGTERM/SIGINT)..."
   pkill -u openldap -TERM slapd 2>/dev/null || pkill -TERM slapd 2>/dev/null || true

@@ -1,29 +1,31 @@
-# TP LDAP - OpenLDAP 2.6 sur Debian 12 (Docker)
+# LDAP Lab - OpenLDAP 2.6 on Debian 12 (Docker)
 
-## Objectif du TP
+## Lab Goal
 
-Ce projet implémente un serveur LDAP OpenLDAP 2.6 avec les fonctionnalités suivantes :
+This project implements an OpenLDAP 2.6 server with the following features:
 
-- **Discrétisation** : Gestion des droits via un groupe `admin_ldap` au lieu du superutilisateur `cn=admin`
-- **Intégration Linux** : Authentification PAM/NSS
-- **Fédération Keycloak** : service Keycloak dans `projet/docker-compose.yml`, script `projet/scripts/configure_keycloak_ldap.sh`, tests `projet/test/test_05_keycloak.sh`
-- **Réplication RW/RO** : service `ldap` (fournisseur) + `ldap-replica` sur le port **1389**, syncrepl + réplica en lecture seule ; tests `projet/test/test_06_replication.sh`
-- **Méta-annuaire** : services **`ldap-acme`** (port **2389**) et **`ldap-meta`** (port **3389**, suffixe **`o=federation`**) dans `projet/docker-compose.yml`, script `projet/scripts/init_meta_annuaire.sh`, tests `projet/test/test_07_meta_annuaire.sh`
+- **Role discretization**: access control through an `admin_ldap` group instead of the `cn=admin` superuser
+- **Linux integration**: PAM/NSS authentication
+- **Keycloak federation**: Keycloak service in `projet/docker-compose.yml`, script `projet/scripts/configure_keycloak_ldap.sh`, tests `projet/test/test_05_keycloak.sh`
+- **RW/RO replication**: `ldap` service (provider) + `ldap-replica` on port **1389**, syncrepl + read-only replica; tests `projet/test/test_06_replication.sh`
+- **Meta-directory**: **`ldap-acme`** (port **2389**) and **`ldap-meta`** (port **3389**, suffix **`o=federation`**) services in `projet/docker-compose.yml`, script `projet/scripts/init_meta_annuaire.sh`, tests `projet/test/test_07_meta_annuaire.sh`
 
-Les instructions à l'origine de ce TP sont disponibles dans le fichier [INSTRUCTIONS.md](./INSTRUCTIONS.md)
+The original lab instructions are available in [INSTRUCTIONS.md](./INSTRUCTIONS.md).
 
-## Prérequis (machine hôte)
+## Prerequisites (host machine)
 
-- **Docker** et **Docker Compose** (plugin `docker compose`).
-- **Ports libres** : **389** (LDAP fournisseur), **1389** (LDAP réplica), **2389** (second annuaire Acme), **3389** (méta-annuaire), **8090** et **9001** (Keycloak ; si 8090 est pris, définir `KEYCLOAK_URL` avant les tests ou adapter les ports dans `projet/docker-compose.yml`).
-- Pour les **tests automatisés** et les commandes **`ldapsearch` / `ldapwhoami`** ci-dessous : clients LDAP sur l’hôte (souvent le paquet **`ldap-utils`** sur Debian/Ubuntu, ou **`openldap-clients`** sur Fedora/RHEL).
-- Pour **Keycloak** (`test_05_keycloak.sh`, script de configuration) : **`curl`** et **`python3`** sur l’hôte.
+- **Docker** and **Docker Compose** (`docker compose` plugin).
+- **Free ports**: **389** (LDAP provider), **1389** (LDAP replica), **2389** (second Acme directory), **3389** (meta-directory), **8090** and **9001** (Keycloak; if 8090 is already used, define `KEYCLOAK_URL` before tests or adjust ports in `projet/docker-compose.yml`).
+- For **automated tests** and **`ldapsearch` / `ldapwhoami`** commands below: LDAP clients installed on host (typically **`ldap-utils`** on Debian/Ubuntu, or **`openldap-clients`** on Fedora/RHEL).
+- For **Keycloak** (`test_05_keycloak.sh`, configuration script): **`curl`** and **`python3`** installed on host.
 
-Sans `ldap-utils` (ou équivalent), le démarrage Docker fonctionne encore, mais `./projet/test/test_01_*.sh` et les tests manuels LDAP depuis la machine hôte échoueront.
+Without `ldap-utils` (or equivalent), Docker startup still works, but `./projet/test/test_01_*.sh` and manual LDAP tests from host will fail.
 
-## Démarrage rapide
+## Quick Start
 
-Les fichiers Docker et les scripts d’automatisation sont dans **`projet/`** (compose, Dockerfile, scripts d’init). Scripts d’annuaire dans **`projet/scripts/`** : `init_ldap.sh`, `init_ldap_linux_integration.sh`, `init_replication_provider.sh`, `init_replication_consumer.sh`, `init_meta_annuaire.sh` ; sur l’hôte : `configure_keycloak_ldap.sh`. Les tests restent dans **`projet/test/`** et se lancent depuis la racine du dépôt avec `./projet/test/…`.
+Docker files and automation scripts are in **`projet/`** (`docker-compose.yml`, Dockerfile, init scripts). Tests remain in **`projet/test/`** and are run from repository root with `./projet/test/...`.
+
+**Option A - from `projet/`** (recommended):
 
 ```bash
 cd projet
@@ -32,81 +34,88 @@ docker ps
 docker logs -f ldap
 ```
 
-La configuration **OpenLDAP** (DIT, ACL, utilisateurs de démo) est appliquée **dans le conteneur** au premier démarrage. **Keycloak** démarre vide : pour créer le realm `tp-ldap` et la fédération LDAP, exécuter une fois (toujours dans `projet/`, après `docker compose up`) :
+**Option B - from repository root** (same build context: `projet/`):
 
 ```bash
-bash scripts/configure_keycloak_ldap.sh
+docker compose -f projet/docker-compose.yml up -d --build
+docker logs -f ldap
 ```
 
-(C’est aussi fait automatiquement lors de l’exécution de `./projet/test/test_05_keycloak.sh` ou de la suite complète ci-dessous.) Au premier lancement, attendre **environ 30 à 60 secondes** que Keycloak réponde sur **http://localhost:8090** avant le script ou les tests Keycloak.
+**OpenLDAP** configuration (DIT, ACLs, demo users) is applied **inside the container** at first startup. **Keycloak** starts empty: to create realm `tp-ldap` and LDAP federation, run once (from repository root):
+
+```bash
+bash projet/scripts/configure_keycloak_ldap.sh
+```
+
+(This is also done automatically when running `./projet/test/test_05_keycloak.sh` or the full suite below.) On first launch, wait **about 30 to 60 seconds** until Keycloak responds on **[http://localhost:8090](http://localhost:8090)** before running script/tests.
 
 ## Tests
 
-### Scripts de test
+### Test scripts
 
 ```bash
-# Toute la suite (objectifs 1 à 7 ; suppose « docker compose up » déjà lancé dans projet/)
+# Full suite (objectives 1 to 7; assumes "docker compose up" already running in projet/)
 ./projet/test/test_all_implemented.sh
 
-# Un seul objectif, par exemple le DIT
+# Single objective, e.g. DIT
 ./projet/test/test_02_conception_dit.sh
 ```
 
-### Tests manuels
+### Manual tests
 
 ```bash
-# Test de connexion LDAP
+# LDAP connectivity test
 ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=org -s base dn
 
-# Test d'authentification
+# Authentication test
 ldapwhoami -x -D cn=admin,dc=example,dc=org -w admin
 ldapwhoami -x -D uid=thomas,ou=people,dc=example,dc=org -w thomas123
 
-# Test de résolution NSS (dans le conteneur)
+# NSS resolution test (inside container)
 docker exec ldap bash -c "getent passwd thomas"
 docker exec ldap bash -c "getent group admin_ldap"
 ```
 
-### Keycloak (fédération LDAP)
+### Keycloak (LDAP federation)
 
-Après `docker compose up -d` dans `projet/` et une courte attente pour le démarrage de Keycloak :
+After `docker compose up -d` in `projet/` and a short wait for Keycloak startup:
 
-- **Configuration automatique** : `./projet/test/test_05_keycloak.sh` (ou la suite complète).
-- **Console d’administration** : [http://localhost:8090/admin/](http://localhost:8090/admin/) - compte bootstrap par défaut : `admin` / `admin` (voir `projet/docker-compose.yml`).
-- **Realm applicatif** : `tp-ldap` ; utilisateurs de test synchronisés depuis LDAP : **thomas** / `thomas123`, **john** / `john123`.
+- **Automatic configuration**: `./projet/test/test_05_keycloak.sh` (or full suite).
+- **Admin console**: [http://localhost:8090/admin/](http://localhost:8090/admin/) - default bootstrap account: `admin` / `admin` (see `projet/docker-compose.yml`).
+- **Application realm**: `tp-ldap`; test users synchronized from LDAP: **thomas** / `thomas123`, **john** / `john123`.
 
-### Réplication (lecture seule sur le réplica)
+### Replication (read-only replica)
 
-- **Fournisseur** : `ldap://localhost:389` (écritures).
-- **Réplica** : `ldap://localhost:1389` (syncrepl depuis `ldap` ; `olcReadOnly` refuse les modifications client).
-- **Vérification** : `./projet/test/test_06_replication.sh` (attente automatique de la synchro).
+- **Provider**: `ldap://localhost:389` (writes).
+- **Replica**: `ldap://localhost:1389` (syncrepl from `ldap`; `olcReadOnly` rejects client updates).
+- **Verification**: `./projet/test/test_06_replication.sh` (automatic sync wait).
 
-### Méta-annuaire (agrégation)
+### Meta-directory (aggregation)
 
-- **Second annuaire** : `ldap://localhost:2389`, base `dc=acme,dc=com` (même DIT de démo que l’annuaire principal).
-- **Méta-annuaire** : `ldap://localhost:3389`, suffixe virtuel `o=federation` ; sous-arbres `ou=example-org,o=federation` et `ou=acme-corp,o=federation`.
-- **Exemple** : `ldapsearch -x -H ldap://localhost:3389 -D cn=admin,o=federation -w admin -b o=federation -s sub '(uid=thomas)' dn mail`
-- **Vérification** : `./projet/test/test_07_meta_annuaire.sh`.
+- **Second directory**: `ldap://localhost:2389`, base `dc=acme,dc=com` (same demo DIT as main directory).
+- **Meta-directory**: `ldap://localhost:3389`, virtual suffix `o=federation`; subtrees `ou=example-org,o=federation` and `ou=acme-corp,o=federation`.
+- **Example**: `ldapsearch -x -H ldap://localhost:3389 -D cn=admin,o=federation -w admin -b o=federation -s sub '(uid=thomas)' dn mail`
+- **Verification**: `./projet/test/test_07_meta_annuaire.sh`.
 
-## Structure DIT
+## DIT Structure
 
 ```text
 dc=example,dc=org
 ├── ou=people,dc=example,dc=org
-│   ├── uid=thomas (membre de admin_ldap)
-│   └── uid=john (membre de developers)
+│   ├── uid=thomas (member of admin_ldap)
+│   └── uid=john (member of developers)
 └── ou=groups,dc=example,dc=org
     ├── cn=admin_ldap (posixGroup, gidNumber: 1001)
     ├── cn=developers (posixGroup, gidNumber: 1002)
-    └── cn=admin_keycloak (groupOfNames ; thomas membre - rôle procédural Keycloak)
+    └── cn=admin_keycloak (groupOfNames; thomas member - procedural Keycloak role)
 ```
 
-## Structure du projet
+## Project Structure
 
 ```text
 TP-LDAP/
-├── projet/              # Docker, scripts d’init ; compose ici (contexte de build = ce dossier)
-│   ├── .dockerignore    # Limite le contexte envoyé au build (exclut test/)
+├── projet/              # Docker, init scripts; compose file is here (build context = this folder)
+│   ├── .dockerignore    # Limits build context sent to Docker (excludes test/)
 │   ├── docker/
 │   ├── scripts/
 │   ├── test/
@@ -117,26 +126,26 @@ TP-LDAP/
 └── INSTRUCTIONS.md
 ```
 
-## Reset et nettoyage
+## Reset and Cleanup
 
-### Reset complet (supprimer toutes les données)
+### Full reset (delete all data)
 
 ```bash
 cd projet
-# Arrêter, supprimer les volumes et reconstruire
+# Stop, remove volumes, and rebuild
 docker compose down -v
 docker compose up -d --build
 ```
 
-### Nettoyage complet (supprimer tout)
+### Full cleanup (remove everything)
 
 ```bash
 cd projet
-# Supprimer conteneurs, volumes, images et réseaux
+# Remove containers, volumes, images, and networks
 docker compose down -v --rmi local
 ```
 
-### Si un conteneur reste bloqué (unhealthy, dépendances)
+### If a container gets stuck (unhealthy, dependencies)
 
 ```bash
 cd projet
@@ -146,24 +155,24 @@ docker network prune -f
 docker compose up -d --build
 ```
 
-## Dépannage
+## Troubleshooting
 
 ```bash
 cd projet
 
-# Voir les logs
+# View logs
 docker logs -f ldap
 
-# Redémarrer le conteneur
+# Restart container
 docker compose restart ldap
 
-# Accès au conteneur en mode interactif
+# Interactive shell in container
 docker exec -it ldap bash
 ```
 
-### Conteneur bloqué en « Created » ou conflit de nom `ldap`
+### Container stuck in "Created" or `ldap` name conflict
 
-Après un arrêt brutal, Docker peut laisser un conteneur orphelin qui réserve encore le nom `ldap`. Dans ce cas :
+After an abrupt shutdown, Docker can leave an orphan container still reserving name `ldap`. In that case:
 
 ```bash
 docker rm -f ldap 2>/dev/null || true
@@ -171,4 +180,4 @@ cd projet && docker compose down -v --remove-orphans
 docker compose up -d --build
 ```
 
-Si `docker compose down` reste bloqué sur « Stopping », forcer : `docker rm -f ldap` puis relancer `docker compose down`.
+If `docker compose down` stays stuck in "Stopping", force it with `docker rm -f ldap` then run `docker compose down` again.

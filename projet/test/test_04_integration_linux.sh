@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 4 - Intégration Linux (PAM/NSS)
+# Objective 4 — Linux integration (PAM/NSS)
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

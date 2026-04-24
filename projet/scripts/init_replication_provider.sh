@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fournisseur de réplication : overlay syncprov + olcServerID (OpenLDAP 2.6).
+# Replication provider: syncprov overlay + olcServerID (OpenLDAP 2.6).
 set -uo pipefail
 
 if [ "${LDAP_SERVICE_ROLE:-provider}" = "consumer" ]; then
@@ -48,7 +48,7 @@ olcServerID: 1
 EOF
 fi
 
-echo "[init_replication_provider] Index entryUUID (recommandé pour syncrepl)..."
+echo "[init_replication_provider] entryUUID index (recommended for syncrepl)..."
 ldapmodify -H ldapi:/// -Y EXTERNAL <<'EOF' 2>/dev/null || true
 dn: olcDatabase={1}mdb,cn=config
 changetype: modify

@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LDAP_ADMIN_PASSWORD="admin" \
     LDAP_TLS="false"
 
-# slapd + clients ; NSS/PAM + nslcd/nscd pour l’objectif 4 (getent).
+# slapd + clients; NSS/PAM + nslcd/nscd for objective 4 (getent).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        slapd ldap-utils tini bash coreutils procps ca-certificates sysvinit-utils \

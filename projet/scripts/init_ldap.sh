@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Script d'initialisation LDAP
-# Ce script configure la base mdb, crée le DIT et configure les ACL
+# LDAP initialization script
+# This script configures the mdb database, creates the DIT, and configures ACLs
 
-# Désactiver l'arrêt sur erreur pour permettre la continuation
+# Disable stop-on-error to allow continuation
 set -uo pipefail
 
-# Variables d'environnement attendues:
+# Expected environment variables:
 # - LDAP_BASE_DN
 # - LDAP_ORGANISATION
 # - LDAP_DOMAIN
-# - LDAP_ADMIN_PASSWORD (utilisée pour le rootDN de la base)
-# - LDAP_SERVICE_ROLE : provider (défaut) = DIT complet ; consumer = base mdb + ACL, données via syncrepl
+# - LDAP_ADMIN_PASSWORD (used for the database rootDN)
+# - LDAP_SERVICE_ROLE: provider (default) = full DIT; consumer = mdb + ACL only, data via syncrepl
 
 BASE_DN=${LDAP_BASE_DN:-"dc=polytech,dc=fr"}
 ROLE=${LDAP_SERVICE_ROLE:-provider}
@@ -18,9 +18,9 @@ ORG=${LDAP_ORGANISATION:-"Polytech"}
 DOMAIN=${LDAP_DOMAIN:-"polytech.fr"}
 ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-"admin123"}
 
-export LDAPTLS_REQCERT=never # pour ne pas avoir à fournir de certificat lors de la connexion
+export LDAPTLS_REQCERT=never # avoid requiring a certificate for local connections
 
-# Attendre que slapd réponde (ldapi)
+# Wait for slapd to respond (ldapi)
 for i in {1..30}; do
   if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
     break
@@ -34,7 +34,7 @@ if [ "$ROLE" = "meta" ]; then
   exit $?
 fi
 
-# Supprimer la base mdb par défaut et créer une nouvelle
+# Remove default mdb database and create a new one
 echo "[init_ldap] Suppression de la base mdb par défaut..."
 ldapmodify -H ldapi:/// -Y EXTERNAL <<EOF
 dn: olcDatabase={1}mdb,cn=config
@@ -42,8 +42,8 @@ changetype: delete
 EOF
 echo "[init_ldap] Base mdb par défaut supprimée"
 
-# Les fichiers sous /var/lib/ldap gardent sinon l’ancien suffixe (ex. dc=nodomain) alors que
-# cn=config pointe déjà vers LDAP_BASE_DN → syncrepl / slapcat incohérents.
+# Files under /var/lib/ldap otherwise keep the old suffix (e.g. dc=nodomain) while
+# cn=config already points to LDAP_BASE_DN, causing inconsistent syncrepl/slapcat behavior.
 echo "[init_ldap] Purge des fichiers mdb et redémarrage de slapd..."
 pkill -u openldap -TERM slapd 2>/dev/null || pkill -TERM slapd 2>/dev/null || true
 for _ in $(seq 1 40); do
@@ -61,7 +61,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-# Créer une nouvelle base mdb avec la configuration correcte
+# Create a new mdb database with the correct configuration
 echo "[init_ldap] Création de la base mdb pour suffix=$BASE_DN..."
 HASH=$(slappasswd -s "$ADMIN_PASS")
 cat > /tmp/new-db.ldif <<EOF
@@ -83,7 +83,7 @@ echo "[init_ldap] Base mdb créée avec suffix=$BASE_DN"
 if [ "$ROLE" = "consumer" ]; then
   echo "[init_ldap] Rôle consumer : pas de création locale du DIT (réplication depuis le fournisseur)."
 else
-# DIT: base + ou=people + ou=groups + groupe admin_ldap + groupe developers + utilisateurs thomas et john
+# DIT: base + ou=people + ou=groups + admin_ldap/developers groups + thomas/john users
 cat > /tmp/dit.ldif <<EOF
 version: 1
 
@@ -141,7 +141,7 @@ mail: john@$DOMAIN
 userPassword: $(slappasswd -s john123)
 EOF
 
-# Ajouter la structure si absente (bind simple sur rootDN)
+# Add structure if missing (simple bind with rootDN)
 echo "[init_ldap] Vérification de l'existence du DIT..."
 if ! ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "$BASE_DN" -s base dn >/dev/null 2>&1; then
   echo "[init_ldap] Création DIT de base..."
@@ -152,7 +152,7 @@ else
 fi
 echo "[init_ldap] Étape DIT terminée"
 
-# Ajouter thomas au groupe admin_ldap et john au groupe developers
+# Add thomas to admin_ldap and john to developers
 echo "[init_ldap] Ajout de thomas au groupe admin_ldap..."
 cat > /tmp/add-thomas-to-admin.ldif <<EOF
 dn: cn=admin_ldap,ou=groups,$BASE_DN
@@ -192,7 +192,7 @@ EOF
 ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/add-thomas-to-admin-keycloak.ldif || echo "[init_ldap] Erreur lors de l'ajout de thomas au groupe admin_keycloak"
 echo "[init_ldap] Thomas ajouté au groupe admin_keycloak"
 
-# Tentative de suppression d'un éventuel entry cn=admin (peu probable qu'il existe)
+# Attempt to remove a potential cn=admin entry (unlikely to exist)
 if ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "$BASE_DN" "(cn=admin)" dn | grep -q "^dn: cn=admin,$BASE_DN$"; then
   echo "[init_ldap] Suppression cn=admin pour discrétisation..."
   cat > /tmp/delete-admin.ldif <<EOF
@@ -204,9 +204,9 @@ EOF
   ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/delete-admin.ldif || echo "[init_ldap] Erreur lors de la suppression de cn=admin"
 fi
 
-fi # fin rôle provider (DIT)
+fi # end provider role block (DIT)
 
-# Configuration des ACL de base pour permettre l'accès
+# Configure baseline ACLs to allow access
 echo "[init_ldap] Configuration des ACL de base..."
 cat > /tmp/acl-basic.ldif <<EOF
 dn: olcDatabase={1}mdb,cn=config
@@ -216,7 +216,7 @@ olcAccess: to * by dn.exact=cn=admin,$BASE_DN manage by * read
 EOF
 ldapmodify -H ldapi:/// -Y EXTERNAL -f /tmp/acl-basic.ldif || echo "[init_ldap] Erreur lors de la configuration des ACL de base"
 
-# Configuration des ACL avancées pour le groupe admin_ldap
+# Configure advanced ACLs for the admin_ldap group
 echo "[init_ldap] Configuration des ACL avancées pour admin_ldap..."
 cat > /tmp/acl-advanced.ldif <<EOF
 dn: olcDatabase={1}mdb,cn=config

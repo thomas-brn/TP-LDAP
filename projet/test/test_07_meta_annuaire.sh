@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Objectif 7 — Fédération LDAP (méta-annuaire back-meta)
-# Prérequis : « docker compose up -d » dans projet/ (ldap, ldap-acme, ldap-meta).
+# Objective 7 — LDAP federation (back-meta meta-directory)
+# Prerequisite: run "docker compose up -d" in projet/ (ldap, ldap-acme, ldap-meta).
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

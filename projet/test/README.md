@@ -1,41 +1,38 @@
-# Scripts de test
+# Test Scripts
 
+Tests are split **by main lab objective**. They assume the compose containers are reachable: `ldap` on `localhost:389`, **`ldap-replica`** on `localhost:1389` (objective 6), **`ldap-acme`** on `localhost:2389` and **`ldap-meta`** on `localhost:3389` (objective 7), and for objective 5 **Keycloak** on `http://localhost:8090` (after `cd projet && docker compose up -d`).
 
-Les tests sont découpés **par objectif principal du TP**. Ils supposent les conteneurs du compose joignables : `ldap` sur `localhost:389`, **ldap-replica** sur `localhost:1389` (objectif 6), **ldap-acme** sur `localhost:2389` et **ldap-meta** sur `localhost:3389` (objectif 7), et pour l’objectif 5 **Keycloak** sur `http://localhost:8090` (après `cd projet && docker compose up -d`).
+## Shared Library
 
-## Bibliothèque partagée
+- **`lib/test_common.sh`** — variables (`BASE_DN`, test passwords), colors, and helper functions `test_function` / `test_with_output` (do not execute directly, only `source` it).
 
-- **`lib/test_common.sh`** - variables (`BASE_DN`, mots de passe de test), couleurs, helpers `test_function` / `test_with_output` (à ne pas exécuter seul : uniquement `source`).
+## One Script Per Objective
 
-## Un script par objectif
+- `test_01_installation_deploiement.sh`: objective 1 — automated installation and deployment
+- `test_02_conception_dit.sh`: objective 2 — DIT structure design
+- `test_03_roles_acl.sh`: objective 3 — role discretization and ACLs
+- `test_04_integration_linux.sh`: objective 4 — Linux integration (PAM/NSS)
+- `test_05_keycloak.sh`: objective 5 — Keycloak integration (User Federation)
+- `test_06_replication.sh`: objective 6 — LDAP replication (provider / RO replica)
+- `test_07_meta_annuaire.sh`: objective 7 — LDAP federation (meta-directory)
 
-| Script                                | Objectif                                   |
-| ------------------------------------- | ------------------------------------------ |
-| `test_01_installation_deploiement.sh` | 1 - Installation et déploiement automatisé |
-| `test_02_conception_dit.sh`           | 2 - Conception de la structure DIT         |
-| `test_03_roles_acl.sh`                | 3 - Discrétisation des rôles et ACL        |
-| `test_04_integration_linux.sh`        | 4 - Intégration Linux (PAM/NSS)            |
-| `test_05_keycloak.sh`                 | 5 - Intégration Keycloak (User Federation) |
-| `test_06_replication.sh`              | 6 - Réplication LDAP (fournisseur / réplica RO) |
-| `test_07_meta_annuaire.sh`            | 7 - Fédération LDAP (méta-annuaire)            |
-
-**Usage** (depuis la racine du dépôt) :
+**Usage** (from repository root):
 
 ```bash
 ./projet/test/test_02_conception_dit.sh
 ```
 
-Ou depuis `projet/test/` :
+Or from `projet/test/`:
 
 ```bash
 ./test_03_roles_acl.sh
 ```
 
-Chaque script affiche un résumé local et se termine par `exit 0` ou `exit 1`.
+Each script prints a local summary and exits with `exit 0` or `exit 1`.
 
-## Lancer toute la suite
+## Run the Full Suite
 
-**`test_all_implemented.sh`** enchaîne les sept scripts dans l’ordre et affiche un **résumé global** (OK / échec par fichier).
+**`test_all_implemented.sh`** runs all seven scripts in order and prints a **global summary** (OK / failed per file).
 
 ```bash
 ./projet/test/test_all_implemented.sh

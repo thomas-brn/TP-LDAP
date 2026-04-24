@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 3 - Discrétisation des rôles et ACL
+# Objective 3 — Role discretization and ACLs
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

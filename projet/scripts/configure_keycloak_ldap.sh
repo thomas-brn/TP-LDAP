@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Configure Keycloak : realm + User Federation LDAP (API d'administration).
-# À lancer depuis la machine hôte une fois « docker compose up -d » (Keycloak joindra ldap:389).
+# Configure Keycloak: realm + LDAP User Federation (admin API).
+# Run from the host machine after "docker compose up -d" (Keycloak will reach ldap:389).
 set -euo pipefail
 
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8090}"

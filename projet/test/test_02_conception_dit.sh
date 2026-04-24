@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 2 - Conception de la structure DIT
+# Objective 2 — DIT structure design
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

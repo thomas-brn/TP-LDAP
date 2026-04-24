@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Objectif 5 - Intégration Keycloak (User Federation LDAP)
-# Prérequis : depuis projet/, « docker compose up -d » (ldap + keycloak).
+# Objective 5 — Keycloak integration (LDAP User Federation)
+# Prerequisite: run "docker compose up -d" from projet/ (ldap + keycloak).
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

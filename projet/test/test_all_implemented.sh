@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lance tous les scripts de test des objectifs 1 à 7 du TP (ordre pédagogique).
+# Runs all objective test scripts from 1 to 7 (teaching order).
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

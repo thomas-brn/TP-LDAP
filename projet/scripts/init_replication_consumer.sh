@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Réplica en lecture seule : olcSyncrepl + olcReadOnly (les écritures client sont refusées, pas la synchro).
+# Read-only replica: olcSyncrepl + olcReadOnly (client writes are denied, replication is not).
 set -uo pipefail
 
 if [ "${LDAP_SERVICE_ROLE:-provider}" != "consumer" ]; then

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Objectif 1 - Installation et déploiement automatisé
+# Objective 1 — Automated installation and deployment
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

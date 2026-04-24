@@ -1,5 +1,5 @@
-# Bibliothèque partagée pour les scripts de test du TP LDAP.
-# À sourcer depuis le même répertoire parent : source "$SCRIPT_DIR/lib/test_common.sh"
+# Shared library for LDAP lab test scripts.
+# Source it from the same parent directory: source "$SCRIPT_DIR/lib/test_common.sh"
 
 BASE_DN="dc=example,dc=org"
 ADMIN_PASS="admin"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Méta-annuaire OpenLDAP (back-meta) : agrège plusieurs annuaires via suffixmassage.
-# Invoqué depuis init_ldap.sh lorsque LDAP_SERVICE_ROLE=meta.
+# OpenLDAP meta-directory (back-meta): aggregates multiple directories via suffixmassage.
+# Invoked from init_ldap.sh when LDAP_SERVICE_ROLE=meta.
 set -euo pipefail
 
 ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-admin}
@@ -82,7 +82,7 @@ if [ -z "$META_DB_DN" ]; then
   exit 1
 fi
 
-# Le namingContext dans olcDbURI doit être un sous-arbre du suffixe meta (olcSuffix), pas le suffixe réel du backend.
+# The namingContext in olcDbURI must be a subtree of the meta suffix (olcSuffix), not the backend real suffix.
 echo "[init_meta] Cible meta : $EX_VIRT → $EX_URI + suffixmassage → $EX_REAL"
 ldapadd -H ldapi:/// -Y EXTERNAL <<EOF
 dn: olcMetaSub={0}example,$META_DB_DN

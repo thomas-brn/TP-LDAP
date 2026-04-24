@@ -1,9 +1,10 @@
-# TP LDAP - OpenLDAP 2.6
+# LDAP Lab — OpenLDAP 2.6
 
-## Objectifs
+## Objectives
 
-Ce TP a pour objectif de :
+This lab aims to:
 
+<<<<<<< HEAD
 1. **Comprendre** l'architecture et le fonctionnement d'un annuaire LDAP
 2. **Déployer** un serveur OpenLDAP 2.6 dans un environnement conteneurisé
 3. **Concevoir** une structure d'annuaire (DIT) adaptée à un cas d'usage réel
@@ -14,149 +15,160 @@ Ce TP a pour objectif de :
 8. **Créer** un méta-annuaire pour agréger plusieurs sources LDAP
 <<<<<<< HEAD
 9. **Tester** l'ensemble de l'infrastructure
+=======
+1. **Understand** LDAP directory architecture and behavior
+2. **Deploy** an OpenLDAP 2.6 server in a containerized environment
+3. **Design** a DIT (Directory Information Tree) adapted to a realistic use case
+4. **Implement** fine-grained access control through role-based ACLs
+5. **Integrate** LDAP with Linux systems for authentication
+6. **Federate** LDAP with Keycloak for identity management
+7. **Set up** a replication architecture for high availability
+8. **Build** a meta-directory aggregating multiple LDAP sources
+9. **Test** the entire infrastructure
+>>>>>>> 7f0a3c9 (Update instructions and README for LDAP lab; translate objectives and constraints to English, enhance clarity, and improve consistency across documentation. Modify Docker and entrypoint scripts for better readability and maintainability. Adjust test scripts to reflect updated objectives and ensure proper integration with Keycloak and LDAP services.)
 
 ---
 
-## Contraintes techniques
+## Technical Constraints
 
-Voici les contraintes :
+Constraints:
 
-| Élément          | Contrainte                |
+| Item             | Constraint                |
 | ---------------- | ------------------------- |
 | Distribution     | Debian 12 (bookworm)      |
-| Conteneurisation | Docker                    |
-| Image de base    | `debian:bookworm-slim`    |
-| Serveur LDAP     | OpenLDAP **2.6**          |
-| Configuration    | Scripts Bash              |
-| Entrypoint       | Boucle `sleep`            |
-| Authentification | Linux (PAM/NSS), Keycloak |
+| Containerization | Docker                    |
+| Base image       | `debian:bookworm-slim`    |
+| LDAP server      | OpenLDAP **2.6**          |
+| Configuration    | Bash scripts              |
+| Entrypoint       | `sleep` loop              |
+| Authentication   | Linux (PAM/NSS), Keycloak |
 
-**Documentation de référence :**
+**Reference documentation:**
 [OpenLDAP 2.6 Admin Guide](https://www.openldap.org/doc/admin26/guide.html)
 
 ---
 
-## Installation et déploiement automatisé
+## Automated Installation and Deployment
 
-Créer une infrastructure LDAP entièrement automatisée :
+Create a fully automated LDAP infrastructure:
 
-1. **Créer un Dockerfile** qui :
-   - Partir de `debian:bookworm-slim`
-   - Installer `slapd` et `ldap-utils`
-   - Configurer OpenLDAP de manière non interactive
-   - Exposer les ports nécessaires
+1. **Create a Dockerfile** that:
+   - Uses `debian:bookworm-slim` as base image
+   - Installs `slapd` and `ldap-utils`
+   - Configures OpenLDAP non-interactively
+   - Exposes required ports
 
-2. **Créer un script d'initialisation** qui :
-   - Configurer le serveur LDAP sans intervention manuelle
-   - Créer la structure DIT de base
-   - Importer les données initiales via fichiers LDIF
+2. **Create an initialization script** that:
+   - Configures the LDAP server without manual intervention
+   - Creates the base DIT structure
+   - Imports initial data using LDIF files
 
-3. **Créer un docker-compose.yml** qui :
-   - Lancer le service LDAP
-   - Configurer les volumes persistants
-   - Permettre le démarrage en une seule commande
+3. **Create a `docker-compose.yml`** that:
+   - Starts the LDAP service
+   - Configures persistent volumes
+   - Enables startup with a single command
 
-   Dans ce dépôt, le fichier correspondant est **`projet/docker-compose.yml`** (exécuter les commandes Docker depuis **`projet/`**).
-
----
-
-## Conception de la structure DIT
-
-Concevoir et implémenter une structure d'annuaire (DIT) cohérente :
-
-1. **Définir la base DN** (`dc=...`) adaptée au cas d'usage
-2. **Créer les unités organisationnelles** nécessaires :
-   - Une "OU" pour les utilisateurs (`ou=people`)
-   - Une "OU" pour les groupes (`ou=groups`)
-   - Éventuellement d'autres "OUs" selon les besoins
-
-3. **Justifier les choix** dans le rapport :
-   - Pourquoi cette structure ?
-   - Comment elle répond aux besoins ?
-   - Comment elle peut évoluer ?
+   In this repository, the matching file is **`projet/docker-compose.yml`** (run Docker commands from **`projet/`**).
 
 ---
 
-## Discrétisation des rôles et ACL
+## DIT Structure Design
 
-Implémenter une gestion des droits basée sur la **discrétisation des rôles** :
+Design and implement a consistent directory structure (DIT):
 
-1. **Créer des groupes LDAP** avec des rôles spécifiques :
-   - `admin_ldap` : administration complète de l'annuaire
-   - `admin_keycloak` : gestion des rôles Keycloak (si applicable)
-   - Groupes fonctionnels selon les besoins
+1. **Define the base DN** (`dc=...`) for your use case
+2. **Create required organizational units**:
+   - One OU for users (`ou=people`)
+   - One OU for groups (`ou=groups`)
+   - Additional OUs if needed
 
-2. **Configurer les ACL** pour :
-   - Donner des droits d'administration au groupe `admin_ldap`
-   - Permettre aux utilisateurs de modifier leurs propres attributs
-   - Protéger les attributs sensibles (`userPassword`)
-   - Appliquer le principe du moindre privilège
-
-3. **Ne pas utiliser** le compte `cn=admin` pour l'administration courante
+3. **Justify your design choices** in your report:
+   - Why this structure?
+   - How does it meet requirements?
+   - How can it evolve?
 
 ---
 
-## Intégration Linux (PAM/NSS)
+## Role Discretization and ACLs
 
-Il faut configurer un système Linux pour utiliser LDAP comme source d'authentification :
+Implement access control based on **role discretization**:
 
-1. **Configurer NSS** pour la résolution des utilisateurs et groupes
-2. **Configurer PAM** pour l'authentification
-3. **Tester** si :
-   - Les utilisateurs LDAP sont visibles via `getent passwd`
-   - Les groupes LDAP sont visibles via `getent group`
-   - L'authentification fonctionne (`su`, `ssh`, etc.)
+1. **Create LDAP groups** with specific roles:
+   - `admin_ldap`: full directory administration
+   - `admin_keycloak`: Keycloak role administration (if applicable)
+   - Additional functional groups as needed
 
----
+2. **Configure ACLs** to:
+   - Grant admin rights to the `admin_ldap` group
+   - Allow users to modify their own attributes
+   - Protect sensitive attributes (`userPassword`)
+   - Enforce the principle of least privilege
 
-## Intégration Keycloak (OpenID)
-
-Il faut configurer Keycloak pour utiliser LDAP comme fournisseur d'identité :
-
-1. **Déployer Keycloak** (conteneur Docker)
-2. **Configurer un User Federation** LDAP dans Keycloak
-3. **Tester** si :
-   - Les utilisateurs LDAP sont synchronisés dans Keycloak
-   - L'authentification via Keycloak fonctionne avec les comptes LDAP
-   - Les rôles peuvent être gérés séparément dans Keycloak
+3. **Do not use** `cn=admin` for day-to-day administration
 
 ---
 
-## Réplication LDAP (RW / RO)
+## Linux Integration (PAM/NSS)
 
-Il faut mettre en place une architecture de réplication :
+Configure a Linux system to use LDAP as its authentication backend:
 
-1. **Créer un serveur principal** (Read-Write)
-2. **Créer un ou plusieurs serveurs secondaires** (Read-Only)
-3. **Configurer la réplication** entre les serveurs
-4. **Tester** si :
-   - Les modifications sur le serveur principal sont propagées
-   - Les serveurs secondaires sont en lecture seule
-   - La synchronisation fonctionne correctement
-
----
-
-## Fédération LDAP (Méta-annuaire)
-
-Il faut créer un méta-annuaire pour agréger plusieurs sources LDAP :
-
-1. **Créer plusieurs annuaires LDAP** distincts (simulant différentes entités)
-2. **Configurer un méta-annuaire** qui :
-   - Reconnaît les annuaires inférieurs
-   - Centralise l'accès aux données
-   - Permet d'interroger plusieurs sources
-
-3. **Tester** si les requêtes sur le méta-annuaire retournent des données des différents LDAP
+1. **Configure NSS** for user/group resolution
+2. **Configure PAM** for authentication
+3. **Test** that:
+   - LDAP users are visible with `getent passwd`
+   - LDAP groups are visible with `getent group`
+   - Authentication works (`su`, `ssh`, etc.)
 
 ---
 
-## Tests et validation
+## Keycloak Integration (OpenID)
 
-Il faut fournir des scripts de test pour chaque objectif :
+Configure Keycloak to use LDAP as an identity provider:
 
-1. **Tests LDAP de base** : Vérification de la connexion, structure DIT
-2. **Tests ACL** : Validation des droits selon les groupes
-3. **Tests intégration Linux** : Résolution et authentification
-4. **Tests intégration Keycloak** : Synchronisation et authentification
-5. **Tests réplication** : Propagation des modifications
-6. **Tests méta-annuaire** : Agrégation des sources
+1. **Deploy Keycloak** (Docker container)
+2. **Configure LDAP User Federation** in Keycloak
+3. **Test** that:
+   - LDAP users are synchronized in Keycloak
+   - Keycloak authentication works with LDAP accounts
+   - Roles can be managed separately in Keycloak
+
+---
+
+## LDAP Replication (RW / RO)
+
+Set up a replication architecture:
+
+1. **Create a primary server** (Read-Write)
+2. **Create one or more secondary servers** (Read-Only)
+3. **Configure replication** between servers
+4. **Test** that:
+   - Changes on the primary server are propagated
+   - Secondary servers are read-only
+   - Synchronization works correctly
+
+---
+
+## LDAP Federation (Meta-directory)
+
+Build a meta-directory that aggregates multiple LDAP sources:
+
+1. **Create multiple distinct LDAP directories** (simulating different entities)
+2. **Configure a meta-directory** that:
+   - Recognizes downstream directories
+   - Centralizes access to data
+   - Allows queries across multiple sources
+
+3. **Test** that queries on the meta-directory return data from different LDAP sources
+
+---
+
+## Testing and Validation
+
+Provide test scripts for each objective:
+
+1. **Basic LDAP tests**: connection and DIT checks
+2. **ACL tests**: rights validation by group
+3. **Linux integration tests**: resolution and authentication
+4. **Keycloak integration tests**: synchronization and authentication
+5. **Replication tests**: change propagation
+6. **Meta-directory tests**: source aggregation

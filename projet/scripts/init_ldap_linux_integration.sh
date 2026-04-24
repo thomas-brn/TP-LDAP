@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Script d'initialisation de l'intégration LDAP-Linux
-# Ce script configure PAM, SSSD et NSS pour l'authentification LDAP
+# LDAP-Linux integration initialization script
+# This script configures PAM, SSSD, and NSS for LDAP authentication
 
-# Variables d'environnement
+# Environment variables
 BASE_DN=${LDAP_BASE_DN:-"dc=example,dc=org"}
 DOMAIN=${LDAP_DOMAIN:-"example.org"}
 ADMIN_PASS=${LDAP_ADMIN_PASSWORD:-"admin"}
@@ -19,7 +19,7 @@ fi
 
 echo "[init_ldap_linux] Début de la configuration de l'intégration LDAP-Linux..."
 
-# Attendre que slapd soit prêt
+# Wait until slapd is ready
 for i in {1..30}; do
   if ldapwhoami -H ldapi:/// -Y EXTERNAL >/dev/null 2>&1; then
     break
@@ -27,11 +27,11 @@ for i in {1..30}; do
   sleep 1
 done
 
-# Configuration de NSS (Name Service Switch)
+# NSS (Name Service Switch) configuration
 echo "[init_ldap_linux] Configuration de NSS..."
 cat > /etc/nsswitch.conf <<EOF
 # /etc/nsswitch.conf
-# Configuration pour l'intégration LDAP
+# LDAP integration configuration
 
 passwd:         files ldap
 group:          files ldap
@@ -49,50 +49,50 @@ rpc:            db files
 netgroup:       ldap
 EOF
 
-# Configuration de libnss-ldap
+# libnss-ldap configuration
 echo "[init_ldap_linux] Configuration de libnss-ldap..."
 cat > /etc/ldap/ldap.conf <<EOF
-# Configuration LDAP pour NSS
+# LDAP configuration for NSS
 BASE $BASE_DN
 URI ldap://localhost:389
 TLS_REQCERT never
 EOF
 
-# Configuration de PAM pour LDAP
+# PAM configuration for LDAP
 echo "[init_ldap_linux] Configuration de PAM..."
 cat > /etc/pam.d/common-auth <<EOF
-# Configuration PAM pour l'authentification LDAP
+# PAM configuration for LDAP authentication
 auth    sufficient      pam_ldap.so
 auth    sufficient      pam_unix.so nullok_secure use_first_pass
 auth    required        pam_deny.so
 EOF
 
 cat > /etc/pam.d/common-account <<EOF
-# Configuration PAM pour la gestion des comptes
+# PAM configuration for account management
 account sufficient      pam_ldap.so
 account sufficient      pam_unix.so
 account required        pam_deny.so
 EOF
 
 cat > /etc/pam.d/common-password <<EOF
-# Configuration PAM pour les mots de passe
+# PAM configuration for passwords
 password        sufficient      pam_ldap.so
 password        sufficient      pam_unix.so nullok obscure min=4 max=8 md5
 password        required        pam_deny.so
 EOF
 
 cat > /etc/pam.d/common-session <<EOF
-# Configuration PAM pour les sessions
+# PAM configuration for sessions
 session required        pam_mkhomedir.so skel=/etc/skel umask=0022
 session sufficient      pam_ldap.so
 session sufficient      pam_unix.so
 session required        pam_deny.so
 EOF
 
-# Configuration de nslcd (plus simple et fiable que SSSD dans un conteneur)
+# nslcd configuration (simpler and more reliable than SSSD in a container)
 echo "[init_ldap_linux] Configuration de nslcd..."
 cat > /etc/nslcd.conf <<EOF
-# Configuration nslcd pour LDAP
+# nslcd configuration for LDAP
 uri ldap://localhost:389
 base $BASE_DN
 ldap_version 3
@@ -110,14 +110,14 @@ map group gidNumber gidNumber
 map group memberUid memberUid
 EOF
 
-# Permissions pour nslcd
+# Permissions for nslcd
 chmod 600 /etc/nslcd.conf
 chown root:root /etc/nslcd.conf
 
-# Configuration de libpam-ldap
+# libpam-ldap configuration
 echo "[init_ldap_linux] Configuration de libpam-ldap..."
 cat > /etc/ldap.conf <<EOF
-# Configuration pour libpam-ldap
+# Configuration for libpam-ldap
 base $BASE_DN
 uri ldap://localhost:389
 ldap_version 3
@@ -146,7 +146,7 @@ pam_filter objectclass=inetOrgPerson
 pam_password exop
 EOF
 
-# Ajout des attributs POSIX aux utilisateurs LDAP
+# Add POSIX attributes to LDAP users
 echo "[init_ldap_linux] Ajout des attributs POSIX aux utilisateurs..."
 cat > /tmp/add_posix_attrs.ldif <<EOF
 dn: uid=thomas,ou=people,$BASE_DN
@@ -194,10 +194,10 @@ EOF
 
 ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/add_posix_attrs.ldif || echo "[init_ldap_linux] Erreur lors de l'ajout des attributs POSIX"
 
-# Conversion des groupes de groupOfNames à posixGroup
+# Convert groups from groupOfNames to posixGroup
 echo "[init_ldap_linux] Conversion des groupes en posixGroup..."
-# Vérifier d'abord si les groupes existent et ont des membres
-# Supprimer d'abord les membres existants (s'ils existent)
+# First check whether groups exist and already have members
+# First remove existing members (if any)
 cat > /tmp/convert_groups_to_posix.ldif <<EOF
 dn: cn=admin_ldap,ou=groups,$BASE_DN
 changetype: modify
@@ -207,9 +207,9 @@ objectClass: groupOfNames
 delete: member
 EOF
 
-# Ajouter les membres s'ils existent
+# Add members if they exist
 if ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "cn=admin_ldap,ou=groups,$BASE_DN" "(member=*)" member 2>/dev/null | grep -q "member:"; then
-    # Supprimer tous les membres existants
+    # Remove all existing members
     ldapsearch -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -b "cn=admin_ldap,ou=groups,$BASE_DN" "(member=*)" member 2>/dev/null | grep "^member:" | sed 's/^member: /delete: member\nmember: /' >> /tmp/convert_groups_to_posix.ldif
 fi
 
@@ -250,13 +250,13 @@ EOF
 
 ldapmodify -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/convert_groups_to_posix.ldif 2>&1 || {
     echo "[init_ldap_linux] Tentative de conversion des groupes..."
-    # Si la conversion échoue, essayer une approche plus simple : supprimer et recréer
+    # If conversion fails, try a simpler approach: delete and recreate
     echo "[init_ldap_linux] Suppression et recréation des groupes en posixGroup..."
-    # Supprimer les groupes existants
+    # Delete existing groups
     ldapdelete -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" "cn=admin_ldap,ou=groups,$BASE_DN" 2>/dev/null || true
     ldapdelete -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" "cn=developers,ou=groups,$BASE_DN" 2>/dev/null || true
     sleep 1
-    # Recréer les groupes en posixGroup
+    # Recreate groups as posixGroup
     cat > /tmp/recreate_posix_groups.ldif <<EOF
 dn: cn=admin_ldap,ou=groups,$BASE_DN
 objectClass: top
@@ -275,20 +275,20 @@ EOF
     ldapadd -x -H ldap:/// -D "cn=admin,$BASE_DN" -w "$ADMIN_PASS" -f /tmp/recreate_posix_groups.ldif 2>&1 && echo "[init_ldap_linux] Groupes recréés en posixGroup" || echo "[init_ldap_linux] Erreur lors de la recréation des groupes"
 }
 
-# Démarrage des services
+# Start services
 echo "[init_ldap_linux] Démarrage des services..."
-# Démarrer nslcd
+# Start nslcd
 service nslcd restart || service nslcd start
-# Attendre que nslcd soit prêt
+# Wait for nslcd readiness
 sleep 2
-# Redémarrer nscd pour recharger la configuration et vider le cache
+# Restart nscd to reload configuration and clear cache
 service nscd restart || service nscd start
-# Vider le cache nscd pour forcer la relecture depuis LDAP
+# Clear nscd cache to force LDAP re-read
 nscd -i passwd 2>/dev/null || true
 nscd -i group 2>/dev/null || true
 sleep 1
 
-# Test de l'intégration
+# Integration check
 echo "[init_ldap_linux] Test de l'intégration..."
 echo "Test de résolution des utilisateurs:"
 getent passwd thomas
